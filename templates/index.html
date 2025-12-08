@@ -3,15 +3,14 @@
 
 <head>
     <title>Soumatou Experience</title>
+
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-</head>
 
-<body>
-
-    <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
-    <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
+    <audio id="snd-heartbeat" src="/static/heartbeat.mp3" loop preload="auto"></audio>
+    <audio id="snd-flatline" src="/static/flatline.mp3" preload="auto"></audio>
 
     <script>
+        // 1. VIDEO PAINTER
         AFRAME.registerComponent('video-canvas', {
             init: function () {
                 this.img = document.getElementById('source');
@@ -30,42 +29,68 @@
             }
         });
 
-        // 3. THE CONTROLLER LISTENER
+        // 2. SOUL TRIGGER & AUDIO
         AFRAME.registerComponent('soul-trigger', {
             init: function () {
-                // Listen for the "A" button on the right controller
-                // or "X" button on the left controller
+                this.heartbeat = document.getElementById('snd-heartbeat');
+                this.flatline = document.getElementById('snd-flatline');
+                this.isDead = false;
+
+                // Bind 'this' so functions can access component data
+                this.startAudio = this.startAudio.bind(this);
+                this.detachSoul = this.detachSoul.bind(this);
+                this.handleTrigger = this.handleTrigger.bind(this);
+
+                // Listeners
+                this.el.sceneEl.addEventListener('enter-vr', this.startAudio);
+                this.el.addEventListener('triggerdown', this.handleTrigger);
                 this.el.addEventListener('abuttondown', this.detachSoul);
                 this.el.addEventListener('xbuttondown', this.detachSoul);
+                window.addEventListener('click', this.startAudio);
+            },
 
-                // Also listen for trigger squeeze just in case
-                this.el.addEventListener('triggerdown', this.detachSoul);
+            startAudio: function () {
+                if (!this.isDead && this.heartbeat.paused) {
+                    console.log("Starting Heartbeat...");
+                    this.heartbeat.play().catch(e => console.log("Audio block:", e));
+                }
+            },
+
+            handleTrigger: function () {
+                this.startAudio(); // Ensure audio starts on first click
             },
 
             detachSoul: function () {
-                console.log("Button Pressed! Soul detaching...");
+                if (this.isDead) return;
+                this.isDead = true;
+                console.log("DEATH TRIGGERED");
 
+                // Audio Swap
+                this.heartbeat.pause();
+                this.heartbeat.currentTime = 0;
+                this.flatline.play();
+
+                // Visual Fade In
                 let screen = document.querySelector('#spirit-screen');
-
-                // Check if already visible to prevent double-triggering
-                let currentOpacity = screen.getAttribute('material').opacity;
-                if (currentOpacity > 0) return;
-
-                // Animate Opacity 0 -> 1
                 screen.setAttribute('animation', {
                     property: 'material.opacity',
                     from: 0,
                     to: 1,
-                    dur: 5000, // 5 Seconds transition
+                    dur: 8000,
                     easing: 'easeInOutSine'
                 });
             }
         });
     </script>
+</head>
+
+<body>
+    <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
+    <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
 
     <a-scene>
 
-        <a-curvedimage id="spirit-screen" video-canvas src="#canvas-tex" height="6.0" radius="3.0" theta-length="150"
+        <a-curvedimage id="spirit-screen" video-canvas src="#canvas-tex" height="9.0" radius="2.0" theta-length="180"
             rotation="0 270 0" position="0 1.5 0" scale="-1 1 1"
             material="shader: flat; side: double; transparent: true; opacity: 0; depthTest: false">
         </a-curvedimage>
