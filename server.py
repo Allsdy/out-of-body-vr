@@ -11,20 +11,33 @@ def add_header(response):
     return response
 
 def generate_frames():
-    # Use the index that worked (e.g., 1)
-    camera = cv2.VideoCapture(2) 
+    # Use your iPhone index (2)
+    camera = cv2.VideoCapture(2)
+    
+    # 1. Force High Resolution
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    
+    # 2. FORCE 60 FPS (iPhone supports this)
+    # Note: If your room is dark, iPhone might auto-drop to 30fps to get more light.
+    camera.set(cv2.CAP_PROP_FPS, 60)
+    
+    # Optional: Remove the internal buffer to reduce latency/old frames
+    camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     while True:
         success, frame = camera.read()
         if not success:
             break
         else:
-            # --- NEW LINE: Mirror the image (1 = Horizontal Flip) ---
+            # Mirror logic
             frame = cv2.flip(frame, 1)
 
-            ret, buffer = cv2.imencode('.jpg', frame)
+            # Reduce JPEG quality slightly to speed up transmission (default is 95)
+            # 80 is a good balance for high-speed streaming
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+            ret, buffer = cv2.imencode('.jpg', frame, encode_param)
+            
             frame = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')

@@ -18,10 +18,22 @@
                 this.img = document.getElementById('source');
                 this.canvas = document.getElementById('canvas-tex');
                 this.ctx = this.canvas.getContext('2d');
+
+                // Optimization: Disable alpha transparency for speed
+                this.ctx.globalCompositeOperation = 'copy';
+                this.ctx.imageSmoothingEnabled = false; // Optional: Makes video sharper/faster but pixelated if zoomed
             },
+
             tick: function () {
+                // REMOVED THE TIME THROTTLE.
+                // Now checking every single frame (90 times a second).
+
                 if (this.img.complete && this.img.naturalHeight > 0) {
+
+                    // Draw immediately
                     this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
+
+                    // Force A-Frame to update texture
                     let mesh = this.el.getObject3D('mesh');
                     if (mesh && mesh.material.map) {
                         mesh.material.map.needsUpdate = true;
