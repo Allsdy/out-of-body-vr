@@ -2,14 +2,13 @@
 <html>
 
 <head>
-    <title>Mac VR Stream</title>
-    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <title>Soumatou Experience</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
 </head>
 
 <body>
 
     <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
-
     <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
 
     <script>
@@ -18,22 +17,11 @@
                 this.img = document.getElementById('source');
                 this.canvas = document.getElementById('canvas-tex');
                 this.ctx = this.canvas.getContext('2d');
-
-                // Optimization: Disable alpha transparency for speed
                 this.ctx.globalCompositeOperation = 'copy';
-                this.ctx.imageSmoothingEnabled = false; // Optional: Makes video sharper/faster but pixelated if zoomed
             },
-
             tick: function () {
-                // REMOVED THE TIME THROTTLE.
-                // Now checking every single frame (90 times a second).
-
                 if (this.img.complete && this.img.naturalHeight > 0) {
-
-                    // Draw immediately
                     this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
-
-                    // Force A-Frame to update texture
                     let mesh = this.el.getObject3D('mesh');
                     if (mesh && mesh.material.map) {
                         mesh.material.map.needsUpdate = true;
@@ -41,18 +29,54 @@
                 }
             }
         });
+
+        // 3. THE CONTROLLER LISTENER
+        AFRAME.registerComponent('soul-trigger', {
+            init: function () {
+                // Listen for the "A" button on the right controller
+                // or "X" button on the left controller
+                this.el.addEventListener('abuttondown', this.detachSoul);
+                this.el.addEventListener('xbuttondown', this.detachSoul);
+
+                // Also listen for trigger squeeze just in case
+                this.el.addEventListener('triggerdown', this.detachSoul);
+            },
+
+            detachSoul: function () {
+                console.log("Button Pressed! Soul detaching...");
+
+                let screen = document.querySelector('#spirit-screen');
+
+                // Check if already visible to prevent double-triggering
+                let currentOpacity = screen.getAttribute('material').opacity;
+                if (currentOpacity > 0) return;
+
+                // Animate Opacity 0 -> 1
+                screen.setAttribute('animation', {
+                    property: 'material.opacity',
+                    from: 0,
+                    to: 1,
+                    dur: 5000, // 5 Seconds transition
+                    easing: 'easeInOutSine'
+                });
+            }
+        });
     </script>
 
     <a-scene>
-        <a-curvedimage video-canvas src="#canvas-tex" height="6.0" radius="3.0" theta-length="140" rotation="0 270 0"
-            position="0 1.5 0" scale="-1 1 1" material="shader: flat; side: double;">
+
+        <a-curvedimage id="spirit-screen" video-canvas src="#canvas-tex" height="6.0" radius="3.0" theta-length="150"
+            rotation="0 270 0" position="0 1.5 0" scale="-1 1 1"
+            material="shader: flat; side: double; transparent: true; opacity: 0; depthTest: false">
         </a-curvedimage>
+
+        <a-entity oculus-touch-controls="hand: left" soul-trigger></a-entity>
+        <a-entity oculus-touch-controls="hand: right" soul-trigger></a-entity>
 
         <a-entity position="0 1.6 0">
             <a-camera look-controls wasd-controls="false"></a-camera>
         </a-entity>
 
-        <a-sky color="#000"></a-sky>
     </a-scene>
 </body>
 
