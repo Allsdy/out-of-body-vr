@@ -2,12 +2,77 @@
 <html>
 
 <head>
-    <title>Soumatou Experience</title>
-
+    <title>Soumatou: Spirit Vision</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
 
     <audio id="snd-heartbeat" src="/static/heartbeat.mp3" loop preload="auto"></audio>
     <audio id="snd-flatline" src="/static/flatline.mp3" preload="auto"></audio>
+
+    <script type="x-shader/x-vertex" id="vertexShader">
+      uniform float uTime;
+      uniform sampler2D uTexture;
+      attribute float aRandom;
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vec3 pos = position;
+        vec2 uv = uv;
+        
+        // 1. SAMPLE VIDEO COLOR
+        vec4 texColor = texture2D(uTexture, uv);
+        
+        // Calculate Brightness
+        float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+
+        // 2. DISPLACEMENT
+        float zOffset = brightness * 2.0; 
+        
+        float theta = pos.x * 0.4; 
+        float radius = 4.0 - zOffset;
+        
+        vec3 curvedPos;
+        curvedPos.x = radius * sin(theta);
+        curvedPos.y = pos.y + (aRandom - 0.5) * 0.05; 
+        curvedPos.z = -radius * cos(theta);
+        curvedPos.x += sin(uTime * 0.5 + aRandom * 5.0) * 0.01;
+
+        vec4 mvPosition = modelViewMatrix * vec4(curvedPos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+
+        // 3. SIZE
+        float sizeBase = 3.5; 
+        gl_PointSize = sizeBase * (0.5 + brightness * 2.0) * (5.0 / -mvPosition.z);
+
+        // 4. COLOR
+        vColor = texColor.rgb * 0.9; 
+        
+        // --- NEW: EDGE FADE (VIGNETTE) ---
+        // Calculate distance from center (0.5, 0.5)
+        float dist = distance(uv, vec2(0.5, 0.5));
+        
+        // Create a mask:
+        // Inside 0.3 radius: 100% visible
+        // Between 0.3 and 0.5: Fades to 0%
+        float edgeMask = 1.0 - smoothstep(0.35, 0.5, dist);
+        
+        // Apply mask to opacity
+        vAlpha = brightness * edgeMask;
+      }
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentShader">
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        vec2 center = gl_PointCoord - 0.5;
+        if (length(center) > 0.5) discard;
+        
+        // Combine alpha with our low global opacity
+        gl_FragColor = vec4(vColor, vAlpha * 0.6);
+      }
+    </script>
 
     <script>
         // 1. VIDEO PAINTER
@@ -21,87 +86,140 @@
             tick: function () {
                 if (this.img.complete && this.img.naturalHeight > 0) {
                     this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
-                    let mesh = this.el.getObject3D('mesh');
-                    if (mesh && mesh.material.map) {
-                        mesh.material.map.needsUpdate = true;
+                    let system = document.querySelector('#particle-system');
+                    if (system) {
+                        let mesh = system.getObject3D('mesh');
+                        if (mesh && mesh.material.uniforms.uTexture.value) {
+                            mesh.material.uniforms.uTexture.value.needsUpdate = true;
+                        }
                     }
                 }
             }
         });
 
-        // 2. SOUL TRIGGER & AUDIO
+        // 2. PARTICLE CLOUD
+        AFRAME.registerComponent('particle-cloud', {
+            init: function () {
+                const width = 480;
+                const height = 360;
+                const count = width * height;
+
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(count * 3);
+                const uvs = new Float32Array(count * 2);
+                const randoms = new Float32Array(count);
+
+                let i = 0;
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const u = x / width;
+                        const v = y / height;
+
+                        const px = (u - 0.5) * 6.0;
+                        const py = (0.5 - v) * 4.0;
+                        const pz = 0;
+
+                        positions[i * 3] = px;
+                        positions[i * 3 + 1] = py;
+                        positions[i * 3 + 2] = pz;
+
+                        uvs[i * 2] = u;
+                        uvs[i * 2 + 1] = 1.0 - v;
+
+                        randoms[i] = Math.random();
+                        i++;
+                    }
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+                geometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1));
+
+                const canvas = document.getElementById('canvas-tex');
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.minFilter = THREE.LinearFilter;
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        uTexture: { value: texture }
+                    },
+                    vertexShader: document.getElementById('vertexShader').textContent,
+                    fragmentShader: document.getElementById('fragmentShader').textContent,
+                    transparent: true,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending
+                });
+
+                const points = new THREE.Points(geometry, material);
+                this.el.setObject3D('mesh', points);
+            },
+
+            tick: function (time, delta) {
+                let mesh = this.el.getObject3D('mesh');
+                if (mesh) {
+                    mesh.material.uniforms.uTime.value = time / 1000;
+                }
+            }
+        });
+
+        // 3. SOUL TRIGGER
         AFRAME.registerComponent('soul-trigger', {
             init: function () {
                 this.heartbeat = document.getElementById('snd-heartbeat');
                 this.flatline = document.getElementById('snd-flatline');
                 this.isDead = false;
 
-                // Bind 'this' so functions can access component data
                 this.startAudio = this.startAudio.bind(this);
                 this.detachSoul = this.detachSoul.bind(this);
-                this.handleTrigger = this.handleTrigger.bind(this);
 
-                // Listeners
                 this.el.sceneEl.addEventListener('enter-vr', this.startAudio);
-                this.el.addEventListener('triggerdown', this.handleTrigger);
+                this.el.addEventListener('triggerdown', this.handleTrigger.bind(this));
                 this.el.addEventListener('abuttondown', this.detachSoul);
                 this.el.addEventListener('xbuttondown', this.detachSoul);
                 window.addEventListener('click', this.startAudio);
             },
 
             startAudio: function () {
-                if (!this.isDead && this.heartbeat.paused) {
-                    console.log("Starting Heartbeat...");
-                    this.heartbeat.play().catch(e => console.log("Audio block:", e));
-                }
+                if (!this.isDead && this.heartbeat.paused) this.heartbeat.play().catch(e => { });
             },
 
-            handleTrigger: function () {
-                this.startAudio(); // Ensure audio starts on first click
-            },
+            handleTrigger: function () { this.startAudio(); },
 
             detachSoul: function () {
                 if (this.isDead) return;
                 this.isDead = true;
-                console.log("DEATH TRIGGERED");
 
-                // Audio Swap
                 this.heartbeat.pause();
                 this.heartbeat.currentTime = 0;
                 this.flatline.play();
 
-                // Visual Fade In
-                let screen = document.querySelector('#spirit-screen');
-                screen.setAttribute('animation', {
-                    property: 'material.opacity',
-                    from: 0,
-                    to: 1,
-                    dur: 8000,
-                    easing: 'easeInOutSine'
-                });
+                let particles = document.querySelector('#particle-system');
+                particles.setAttribute('visible', 'true');
+
+                let voidSphere = document.querySelector('#black-void');
+                voidSphere.setAttribute('visible', 'true');
             }
         });
     </script>
 </head>
 
 <body>
+
     <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
-    <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
+    <canvas id="canvas-tex" width="640" height="480" style="display:none;"></canvas>
 
     <a-scene>
+        <a-sky id="black-void" color="#000" radius="100" visible="false"></a-sky>
 
-        <a-curvedimage id="spirit-screen" video-canvas src="#canvas-tex" height="9.0" radius="2.0" theta-length="180"
-            rotation="0 270 0" position="0 1.5 0" scale="-1 1 1"
-            material="shader: flat; side: double; transparent: true; opacity: 0; depthTest: false">
-        </a-curvedimage>
+        <a-entity id="particle-system" particle-cloud video-canvas position="0 1.6 -1.5" visible="false">
+        </a-entity>
 
         <a-entity oculus-touch-controls="hand: left" soul-trigger></a-entity>
         <a-entity oculus-touch-controls="hand: right" soul-trigger></a-entity>
-
         <a-entity position="0 1.6 0">
             <a-camera look-controls wasd-controls="false"></a-camera>
         </a-entity>
-
     </a-scene>
 </body>
 
