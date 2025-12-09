@@ -10,6 +10,7 @@
 
     <script type="x-shader/x-vertex" id="vertexShader">
       uniform float uTime;
+      uniform float uOpacity; 
       uniform sampler2D uTexture;
       attribute float aRandom;
       varying vec3 vColor;
@@ -18,46 +19,42 @@
       void main() {
         vec3 pos = position;
         vec2 uv = uv;
+        vec2 correctedUV = uv; // VR 中通常不需要翻转，如果倒了请改为 vec2(uv.x, 1.0 - uv.y)
         
-        // 1. SAMPLE VIDEO COLOR
-        vec4 texColor = texture2D(uTexture, uv);
-        
-        // Calculate Brightness
+        vec4 texColor = texture2D(uTexture, correctedUV);
         float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
 
-        // 2. DISPLACEMENT
+        // --- 视觉风格移植 ---
+        // Z轴置换
         float zOffset = brightness * 2.0; 
         
-        float theta = pos.x * 0.4; 
-        float radius = 4.0 - zOffset;
+        // 粒子位置 (轻微弯曲)
+        float theta = pos.x * 0.2; 
+        float radius = 5.0 - zOffset; 
         
         vec3 curvedPos;
         curvedPos.x = radius * sin(theta);
-        curvedPos.y = pos.y + (aRandom - 0.5) * 0.05; 
+        curvedPos.y = pos.y;
         curvedPos.z = -radius * cos(theta);
+
+        // 呼吸动画
         curvedPos.x += sin(uTime * 0.5 + aRandom * 5.0) * 0.01;
 
         vec4 mvPosition = modelViewMatrix * vec4(curvedPos, 1.0);
         gl_Position = projectionMatrix * mvPosition;
 
-        // 3. SIZE
-        float sizeBase = 3.5; 
+        // --- 粒子大小 (sizeBase = 3.0) ---
+        float sizeBase = 3.0; 
         gl_PointSize = sizeBase * (0.5 + brightness * 2.0) * (5.0 / -mvPosition.z);
 
-        // 4. COLOR
+        // --- 颜色 (RGB * 0.9) ---
         vColor = texColor.rgb * 0.9; 
         
-        // --- NEW: EDGE FADE (VIGNETTE) ---
-        // Calculate distance from center (0.5, 0.5)
-        float dist = distance(uv, vec2(0.5, 0.5));
+        // --- 边缘遮罩 ---
+        float dist = distance(correctedUV, vec2(0.5, 0.5));
+        float edgeMask = 1.0 - smoothstep(0.4, 0.5, dist);
         
-        // Create a mask:
-        // Inside 0.3 radius: 100% visible
-        // Between 0.3 and 0.5: Fades to 0%
-        float edgeMask = 1.0 - smoothstep(0.35, 0.5, dist);
-        
-        // Apply mask to opacity
-        vAlpha = brightness * edgeMask;
+        vAlpha = brightness * edgeMask * uOpacity;
       }
     </script>
 
@@ -68,8 +65,8 @@
       void main() {
         vec2 center = gl_PointCoord - 0.5;
         if (length(center) > 0.5) discard;
-        
-        // Combine alpha with our low global opacity
+        if (vAlpha < 0.01) discard;
+        // 0.6 透明度配合 Additive Blending
         gl_FragColor = vec4(vColor, vAlpha * 0.6);
       }
     </script>
@@ -97,11 +94,12 @@
             }
         });
 
-        // 2. PARTICLE CLOUD
+        // 2. PARTICLE CLOUD (视觉更新)
         AFRAME.registerComponent('particle-cloud', {
             init: function () {
-                const width = 480;
-                const height = 360;
+                // 提高密度以匹配 monitor.html (320x180)
+                const width = 320;
+                const height = 180;
                 const count = width * height;
 
                 const geometry = new THREE.BufferGeometry();
@@ -115,17 +113,16 @@
                         const u = x / width;
                         const v = y / height;
 
-                        const px = (u - 0.5) * 6.0;
-                        const py = (0.5 - v) * 4.0;
+                        // 尺寸匹配 monitor: 8.0 x 4.5
+                        const px = (u - 0.5) * 8.0;
+                        const py = (0.5 - v) * 4.5;
                         const pz = 0;
 
                         positions[i * 3] = px;
                         positions[i * 3 + 1] = py;
                         positions[i * 3 + 2] = pz;
-
                         uvs[i * 2] = u;
                         uvs[i * 2 + 1] = 1.0 - v;
-
                         randoms[i] = Math.random();
                         i++;
                     }
@@ -142,6 +139,7 @@
                 const material = new THREE.ShaderMaterial({
                     uniforms: {
                         uTime: { value: 0 },
+                        uOpacity: { value: 0.0 },
                         uTexture: { value: texture }
                     },
                     vertexShader: document.getElementById('vertexShader').textContent,
@@ -163,42 +161,163 @@
             }
         });
 
-        // 3. SOUL TRIGGER
+        // 3. CROP CONTROLLER (新增：右手摇杆控制)
+        AFRAME.registerComponent('crop-controller', {
+            init: function () {
+                // 物理状态
+                this.position = { x: 0.5, y: 0.5 };
+                this.velocity = { x: 0.0, y: 0.0 };
+                this.input = { x: 0.0, y: 0.0 };
+
+                // 物理参数 (与 monitor.html 保持一致)
+                this.PHYSICS = {
+                    accel: 0.002,
+                    friction: 0.90,
+                    maxSpeed: 0.03,
+                    deadZone: 0.0001
+                };
+
+                this.lastSendTime = 0;
+                this.SEND_INTERVAL = 30;
+
+                // 监听 Oculus 手柄摇杆事件
+                this.el.addEventListener('thumbstickmoved', (evt) => {
+                    // evt.detail.x / y 范围是 -1.0 到 1.0
+                    this.input.x = evt.detail.x;
+                    this.input.y = evt.detail.y;
+                });
+
+                // 摇杆归位时清零输入
+                this.el.addEventListener('thumbstickend', () => {
+                    this.input.x = 0;
+                    this.input.y = 0;
+                });
+            },
+
+            tick: function (time, delta) {
+                // 1. 应用加速度 (根据摇杆输入)
+                // 注意：摇杆向右(x>0)，画面应该往左看，意味着 Crop 框向右移 (x增加)。逻辑一致。
+                // 摇杆向上(y<0 in Quest)，画面往上看，意味着 Crop 框向上移 (y减少)。
+                // Quest y轴: 上是 -1, 下是 +1。 monitor y轴: 上是减小, 下是增加。
+                // 所以逻辑也是一致的。
+
+                if (Math.abs(this.input.x) > 0.1) this.velocity.x += this.input.x * this.PHYSICS.accel;
+                if (Math.abs(this.input.y) > 0.1) this.velocity.y += this.input.y * this.PHYSICS.accel;
+
+                // 2. 限制速度
+                this.velocity.x = Math.max(-this.PHYSICS.maxSpeed, Math.min(this.PHYSICS.maxSpeed, this.velocity.x));
+                this.velocity.y = Math.max(-this.PHYSICS.maxSpeed, Math.min(this.PHYSICS.maxSpeed, this.velocity.y));
+
+                // 3. 摩擦力
+                this.velocity.x *= this.PHYSICS.friction;
+                this.velocity.y *= this.PHYSICS.friction;
+
+                // 4. 静止阈值
+                if (Math.abs(this.velocity.x) < this.PHYSICS.deadZone) this.velocity.x = 0;
+                if (Math.abs(this.velocity.y) < this.PHYSICS.deadZone) this.velocity.y = 0;
+
+                // 5. 更新位置
+                this.position.x += this.velocity.x;
+                this.position.y += this.velocity.y;
+
+                // 6. 边界限制
+                this.position.x = Math.max(0.0, Math.min(1.0, this.position.x));
+                this.position.y = Math.max(0.0, Math.min(1.0, this.position.y));
+
+                // 7. 发送给服务器
+                const now = Date.now();
+                if ((Math.abs(this.velocity.x) > 0 || Math.abs(this.velocity.y) > 0) && (now - this.lastSendTime > this.SEND_INTERVAL)) {
+                    this.sendPosition();
+                    this.lastSendTime = now;
+                }
+            },
+
+            sendPosition: function () {
+                fetch('/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: this.position.x, y: this.position.y })
+                }).catch(e => { });
+            }
+        });
+
+        // 4. SOUL TRIGGER (保持不变)
         AFRAME.registerComponent('soul-trigger', {
             init: function () {
                 this.heartbeat = document.getElementById('snd-heartbeat');
                 this.flatline = document.getElementById('snd-flatline');
                 this.isDead = false;
+                this.transitioning = false;
+                this.timer = 0;
+                this.entryDuration = 20.0;
+                this.returnDuration = 10.0;
+                this.currentDuration = 10.0;
 
                 this.startAudio = this.startAudio.bind(this);
-                this.detachSoul = this.detachSoul.bind(this);
+                this.toggleSoul = this.toggleSoul.bind(this);
 
                 this.el.sceneEl.addEventListener('enter-vr', this.startAudio);
+                // 保留左手 Trigger 触发声音
                 this.el.addEventListener('triggerdown', this.handleTrigger.bind(this));
-                this.el.addEventListener('abuttondown', this.detachSoul);
-                this.el.addEventListener('xbuttondown', this.detachSoul);
+                // 左右手 A/X 键触发灵魂出窍
+                this.el.addEventListener('abuttondown', this.toggleSoul);
+                this.el.addEventListener('xbuttondown', this.toggleSoul);
                 window.addEventListener('click', this.startAudio);
             },
 
             startAudio: function () {
                 if (!this.isDead && this.heartbeat.paused) this.heartbeat.play().catch(e => { });
             },
-
             handleTrigger: function () { this.startAudio(); },
 
-            detachSoul: function () {
-                if (this.isDead) return;
-                this.isDead = true;
+            toggleSoul: function () {
+                if (this.transitioning) return;
+                this.isDead = !this.isDead;
+                this.transitioning = true;
+                this.timer = 0;
 
-                this.heartbeat.pause();
-                this.heartbeat.currentTime = 0;
-                this.flatline.play();
+                if (this.isDead) {
+                    console.log("Leaving Body...");
+                    this.currentDuration = this.entryDuration;
+                    this.heartbeat.pause();
+                    this.heartbeat.currentTime = 0;
+                    this.flatline.play();
+                    document.querySelector('#black-void').setAttribute('visible', 'true');
+                    document.querySelector('#particle-system').setAttribute('visible', 'true');
+                } else {
+                    console.log("Returning to Body...");
+                    this.currentDuration = this.returnDuration;
+                    this.flatline.pause();
+                    this.flatline.currentTime = 0;
+                    this.heartbeat.play();
+                }
+            },
+
+            tick: function (time, timeDelta) {
+                if (!this.transitioning) return;
+                let dt = timeDelta / 1000;
+                this.timer += dt;
+                let rawProgress = Math.min(this.timer / this.currentDuration, 1.0);
+                let smoothProgress = Math.pow(rawProgress, 3.0);
 
                 let particles = document.querySelector('#particle-system');
-                particles.setAttribute('visible', 'true');
+                let mesh = particles ? particles.getObject3D('mesh') : null;
 
-                let voidSphere = document.querySelector('#black-void');
-                voidSphere.setAttribute('visible', 'true');
+                if (mesh) {
+                    if (this.isDead) {
+                        mesh.material.uniforms.uOpacity.value = smoothProgress;
+                    } else {
+                        mesh.material.uniforms.uOpacity.value = 1.0 - rawProgress;
+                    }
+                }
+
+                if (rawProgress >= 1.0) {
+                    this.transitioning = false;
+                    if (!this.isDead) {
+                        document.querySelector('#black-void').setAttribute('visible', 'false');
+                        particles.setAttribute('visible', 'false');
+                    }
+                }
             }
         });
     </script>
@@ -207,16 +326,18 @@
 <body>
 
     <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
-    <canvas id="canvas-tex" width="640" height="480" style="display:none;"></canvas>
+    <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
 
     <a-scene>
         <a-sky id="black-void" color="#000" radius="100" visible="false"></a-sky>
 
-        <a-entity id="particle-system" particle-cloud video-canvas position="0 1.6 -1.5" visible="false">
+        <a-entity id="particle-system" particle-cloud video-canvas position="0 1.6 -4.5" visible="false">
         </a-entity>
 
         <a-entity oculus-touch-controls="hand: left" soul-trigger></a-entity>
-        <a-entity oculus-touch-controls="hand: right" soul-trigger></a-entity>
+
+        <a-entity oculus-touch-controls="hand: right" soul-trigger crop-controller></a-entity>
+
         <a-entity position="0 1.6 0">
             <a-camera look-controls wasd-controls="false"></a-camera>
         </a-entity>

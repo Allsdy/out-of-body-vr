@@ -18,4 +18,3 @@ for index in range(5):
         cap.release()
     else:
         print(f"❌ Camera Index {index}: Not found.")
-        
