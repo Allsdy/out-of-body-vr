@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>Soumatou: Audio Memories</title>
+    <title>Soumatou: New Flow (Review -> OBE)</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
 
     <script type="x-shader/x-vertex" id="transVertex">
@@ -58,89 +58,113 @@
     </script>
 
     <script type="x-shader/x-vertex" id="photoVertex">
-        uniform float uOpacity; 
+        uniform float uOpacity;
+
         uniform sampler2D uTexture;
-        uniform float uTime; 
         
-        varying vec3 vColor; 
+        uniform float uTime;
+        
+        
+        varying vec3 vColor;
+        
         varying float vAlpha;
+        
         varying vec3 vWorldPos;
-  
+        
+        
         void main() {
-          vec3 pos = position; 
-          vec2 uv = uv;
-          vec4 texColor = texture2D(uTexture, uv);
-          float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
-  
-          pos.z += brightness * 0.02; 
-  
-          // 飘动算法
-          float driftX = sin(uTime * 0.5 + uv.y * 3.0) * 0.02; 
-          float driftY = cos(uTime * 0.3 + uv.x * 3.0) * 0.02;
-          float driftZ = sin(uTime * 0.4 + uv.x * 5.0 + uv.y * 5.0) * 0.15;
-          pos.x += driftX; pos.y += driftY; pos.z += driftZ;
-  
-          vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
-          vWorldPos = worldPosition.xyz;
-  
-          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_Position = projectionMatrix * mvPosition;
-  
-          float sizeBase = 3.0; 
-          gl_PointSize = sizeBase * (5.0 / -mvPosition.z);
-          
-          vColor = texColor.rgb;
-  
-          // --- [新增] 图片边缘淡出 (Image Vignette) ---
-          // 计算粒子距离图片中心的距离
-          float distFromCenter = distance(uv, vec2(0.5));
-          
-          // 创建遮罩：中心(0.0)是1.0，边缘(0.5)是0.0
-          // smoothstep(内圈半径, 外圈半径, 当前距离)
-          // 0.35 开始衰减，到 0.5 完全透明
-          float imgFade = 1.0 - smoothstep(0.35, 0.5, distFromCenter);
-  
-          // 将边缘淡出遮罩应用到 Alpha
-          vAlpha = uOpacity * imgFade;
+        
+        vec3 pos = position;
+        
+        vec2 uv = uv;
+        
+        vec4 texColor = texture2D(uTexture, uv);
+        
+        float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+        
+        
+        pos.z += brightness * 0.02;
+        
+        
+        // 飘动算法
+        
+        float driftX = sin(uTime * 0.5 + uv.y * 3.0) * 0.02;
+        
+        float driftY = cos(uTime * 0.3 + uv.x * 3.0) * 0.02;
+        
+        float driftZ = sin(uTime * 0.4 + uv.x * 5.0 + uv.y * 5.0) * 0.15;
+        
+        pos.x += driftX; pos.y += driftY; pos.z += driftZ;
+        
+        
+        vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+        
+        vWorldPos = worldPosition.xyz;
+        
+        
+        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+        
+        gl_Position = projectionMatrix * mvPosition;
+        
+        
+        float sizeBase = 3.0;
+        
+        gl_PointSize = sizeBase * (5.0 / -mvPosition.z);
+        
+        
+        vColor = texColor.rgb;
+        
+        
+        // --- [新增] 图片边缘淡出 (Image Vignette) ---
+        
+        // 计算粒子距离图片中心的距离
+        
+        float distFromCenter = distance(uv, vec2(0.5));
+        
+        
+        // 创建遮罩：中心(0.0)是1.0，边缘(0.5)是0.0
+        
+        // smoothstep(内圈半径, 外圈半径, 当前距离)
+        
+        // 0.35 开始衰减，到 0.5 完全透明
+        
+        float imgFade = 1.0 - smoothstep(0.35, 0.5, distFromCenter);
+        
+        
+        // 将边缘淡出遮罩应用到 Alpha
+        
+        vAlpha = uOpacity * imgFade;
+        
         }
-      </script>
+    </script>
 
     <script type="x-shader/x-fragment" id="photoFragment">
-      varying vec3 vColor; varying float vAlpha;
-      varying vec3 vWorldPos; 
-      uniform vec3 uCamPos; 
-      uniform vec3 uCamDir; 
-
+      varying vec3 vColor; varying float vAlpha; varying vec3 vWorldPos; 
+      uniform vec3 uCamPos; uniform vec3 uCamDir; 
       void main() {
         vec2 center = gl_PointCoord - 0.5;
         float dist = length(center);
         float circle = 1.0 - smoothstep(0.4, 0.5, dist);
         if (circle < 0.1) discard;
-
-        // 聚光灯 Shader 计算
         vec3 toParticle = normalize(vWorldPos - uCamPos);
         float dotProd = dot(toParticle, uCamDir);
         float spotlight = smoothstep(0.93, 0.99, dotProd);
-
         gl_FragColor = vec4(vColor, vAlpha * circle * spotlight);
       }
     </script>
 
-
     <script>
-        // 1. Photo Component (增加音频触发逻辑)
+        // 1. Photo Component (保持不变)
         AFRAME.registerComponent('particle-photo', {
             schema: {
                 src: { type: 'string' },
                 opacity: { type: 'number', default: 0.0 },
-                id: { type: 'int', default: 0 } // [新增] 图片ID
+                id: { type: 'int', default: 0 }
             },
             init: function () {
-                const width = 80;
-                const height = 60;
+                const width = 80; const height = 60;
                 const geometry = new THREE.PlaneBufferGeometry(1.6, 1.2, width, height);
                 const textureLoader = new THREE.TextureLoader();
-
                 textureLoader.load(this.data.src, (texture) => {
                     texture.minFilter = THREE.LinearFilter;
                     const material = new THREE.ShaderMaterial({
@@ -153,89 +177,53 @@
                         },
                         vertexShader: document.getElementById('photoVertex').textContent,
                         fragmentShader: document.getElementById('photoFragment').textContent,
-                        transparent: true,
-                        depthWrite: false,
-                        blending: THREE.NormalBlending
+                        transparent: true, depthWrite: false, blending: THREE.NormalBlending
                     });
                     const points = new THREE.Points(geometry, material);
                     points.frustumCulled = false;
                     this.el.setObject3D('mesh', points);
                     this.material = material;
                 });
-
-                this.camPos = new THREE.Vector3();
-                this.camDir = new THREE.Vector3();
-                this.worldPos = new THREE.Vector3(); // 存储图片自身位置
-
-                // [新增] 状态标记，防止重复发送请求
+                this.camPos = new THREE.Vector3(); this.camDir = new THREE.Vector3(); this.worldPos = new THREE.Vector3();
                 this.hasFocus = false;
             },
-
             update: function () {
                 if (this.material && this.material.uniforms) {
                     this.material.uniforms.uOpacity.value = this.data.opacity;
                 }
             },
-
             tick: function (time, delta) {
-                // 仅在显示且加载完成时计算
                 if (!this.material || !this.material.uniforms) return;
-
-                // 1. 更新时间 (Visuals)
                 this.material.uniforms.uTime.value = time / 1000;
-
-                // 2. 更新相机数据 (Visuals)
                 let camera = this.el.sceneEl.camera;
                 if (!camera) return;
-
                 camera.getWorldPosition(this.camPos);
                 camera.getWorldDirection(this.camDir);
                 this.material.uniforms.uCamPos.value.copy(this.camPos);
                 this.material.uniforms.uCamDir.value.copy(this.camDir);
 
-                // 3. [核心] 音频触发逻辑 (Audio Logic)
-                // 如果透明度太低(未显示)，不触发声音
                 if (this.data.opacity < 0.5) return;
-
-                // 获取图片的世界坐标中心
                 this.el.object3D.getWorldPosition(this.worldPos);
-
-                // 计算向量: 相机 -> 图片中心
                 let toImg = this.worldPos.clone().sub(this.camPos).normalize();
-
-                // 计算夹角 (点积)
                 let dot = toImg.dot(this.camDir);
-
-                // 阈值判断：0.94 大约对应 20度夹角内的聚光范围
-                // 增加一点滞后(hysteresis)防止边缘闪烁: 进0.94, 出0.92
-                let thresholdEnter = 0.94;
-                let thresholdExit = 0.92;
-
-                if (!this.hasFocus && dot > thresholdEnter) {
-                    // 进入视野 -> 发送播放指令
-                    this.hasFocus = true;
-                    this.sendAudioCmd('focus_enter');
-                } else if (this.hasFocus && dot < thresholdExit) {
-                    // 离开视野 -> 发送停止指令
-                    this.hasFocus = false;
-                    this.sendAudioCmd('focus_exit');
+                if (!this.hasFocus && dot > 0.94) {
+                    this.hasFocus = true; this.sendAudioCmd('focus_enter');
+                } else if (this.hasFocus && dot < 0.92) {
+                    this.hasFocus = false; this.sendAudioCmd('focus_exit');
                 }
             },
-
             sendAudioCmd: function (actionType) {
-                // console.log(`Audio Event: ${actionType} -> ID: ${this.data.id}`);
                 fetch('/trigger_effect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: actionType, id: this.data.id })
                 }).catch(e => { });
             }
         });
 
-        // 2. Void Particles (不变)
+        // 2. Void Particles (保持不变)
         AFRAME.registerComponent('particle-cloud', {
             init: function () {
-                const width = 160, height = 160;
+                const width = 240, height = 180;
                 const geometry = new THREE.PlaneBufferGeometry(8.0, 4.5, width, height);
                 const texture = new THREE.CanvasTexture(document.getElementById('canvas-tex'));
                 texture.minFilter = THREE.LinearFilter;
@@ -256,7 +244,7 @@
             }
         });
 
-        // 3. Head Tracker (不变)
+        // 3. Head Tracker (保持不变)
         AFRAME.registerComponent('head-tracker', {
             init: function () {
                 this.camEntity = document.querySelector('#main-camera');
@@ -291,21 +279,14 @@
             }
         });
 
-        // 4. Gallery Generator (传入 ID)
+        // 4. Gallery Generator (保持不变)
         AFRAME.registerComponent('gallery-generator', {
-            schema: {
-                count: { type: 'int', default: 10 },
-                radius: { type: 'number', default: 2.5 },
-                minDist: { type: 'number', default: 0.85 }
-            },
-            init: function () {
-                this.generateGallery();
-            },
+            schema: { count: { type: 'int', default: 10 }, radius: { type: 'number', default: 2.5 }, minDist: { type: 'number', default: 0.85 } },
+            init: function () { this.generateGallery(); },
             generateGallery: function () {
                 this.el.innerHTML = '';
                 let placedPositions = [];
                 let attempts = 0;
-
                 for (let i = 1; i <= this.data.count; i++) {
                     let pos = null;
                     let valid = false;
@@ -324,34 +305,21 @@
                         }
                         if (!clash) { pos = candidate; valid = true; placedPositions.push(pos); }
                     }
-
                     if (pos) {
                         let wrapper = document.createElement('a-entity');
                         wrapper.setAttribute('position', pos);
                         wrapper.classList.add('memory-fragment');
-
-                        // 背景板
                         let bg = document.createElement('a-plane');
-                        bg.setAttribute('color', '#000');
-                        bg.setAttribute('opacity', '0.4');
-                        bg.setAttribute('width', '1.7');
-                        bg.setAttribute('height', '1.3');
-                        bg.setAttribute('position', '0 0 -0.2');
-                        bg.setAttribute('class', 'photo-bg');
-                        bg.setAttribute('material', 'transparent: true; opacity: 0');
-
+                        bg.setAttribute('color', '#000'); bg.setAttribute('opacity', '0.4'); bg.setAttribute('width', '1.7'); bg.setAttribute('height', '1.3'); bg.setAttribute('position', '0 0 -0.2'); bg.setAttribute('class', 'photo-bg'); bg.setAttribute('material', 'transparent: true; opacity: 0');
                         wrapper.appendChild(bg);
-
-                        // [修改] 传入 ID
                         wrapper.setAttribute('particle-photo', `src: /static/img/${i}.jpg; opacity: 0; id: ${i}`);
-
                         this.el.appendChild(wrapper);
                     }
                 }
             }
         });
 
-        // 5. Blur & 6. Video (不变)
+        // 5. Blur & 6. Video (保持不变)
         AFRAME.registerComponent('blur-material', {
             init: function () {
                 const material = new THREE.ShaderMaterial({
@@ -381,138 +349,222 @@
             }
         });
 
-        // 7. Transition Controller (不变)
+        // ==========================================
+        // 7. TRANSITION CONTROLLER (FIXED)
+        // ==========================================
         AFRAME.registerComponent('transition-controller', {
             init: function () {
-                this.state = 'REALITY';
+                this.currentState = 'REALITY';
+                this.isTransitioning = false;
+                this.isReturning = false;
+                this.isIntroRunning = false; // [新增]
+                this.fadeDirection = 0;
+                this.fadeStartTime = 0;
+                this.fadeDuration = 12000;
+
                 this.sky = document.querySelector('#black-void');
                 this.particles = document.querySelector('#particle-system');
                 this.transSphere = document.querySelector('#transition-sphere');
                 this.lifeReviewContainer = document.querySelector('#life-review-container');
 
-                this.startTime = 0;
-                this.duration = 20000;
-
-                this.sendCmd = (act) => {
-                    fetch('/trigger_effect', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: act })
-                    }).catch(e => console.log(e));
-                };
+                this.sendCmd = (act) => { fetch('/trigger_effect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: act }) }).catch(e => console.log(e)); };
 
                 this.trigger = this.trigger.bind(this);
                 this.el.sceneEl.addEventListener('abuttondown', this.trigger);
                 this.el.sceneEl.addEventListener('xbuttondown', this.trigger);
-                this.sendCmd('stop_heartbeat');
             },
 
             trigger: function () {
-                if (this.state === 'REALITY') {
-                    this.state = 'BLURRING';
-                    this.startTime = Date.now();
-                    this.transSphere.setAttribute('visible', true);
-                    let mesh = this.transSphere.getObject3D('mesh');
-                    if (mesh && mesh.material.uniforms) mesh.material.uniforms.uProgress.value = 0.0;
-                    this.sendCmd('play_heartbeat');
+                if (this.isTransitioning || this.isReturning || this.isIntroRunning) return;
+
+                if (this.currentState === 'REALITY') {
+                    // [修改] 先播放 Intro 剧情，再转场
+                    this.runIntroSequence();
                 }
-                else if (this.state === 'VOID') {
-                    this.enterLifeReview();
+                else if (this.currentState === 'LIFE_REVIEW') {
+                    this.startTransition('OBE');
                 }
-                else if (this.state === 'LIFE_REVIEW') {
-                    this.returnToReality();
+                else if (this.currentState === 'OBE') {
+                    // [修改] OBE 阶段按键 -> 启动除颤仪序列
+                    this.runDefibSequence();
                 }
             },
 
-            enterLifeReview: function () {
-                console.log("-> Life Review");
-                this.state = 'LIFE_REVIEW';
+            // [新增] 剧情序列：脚步声 -> 注射 -> 等待 -> 转场
+            runIntroSequence: function () {
+                console.log("Intro Sequence Started...");
+                this.isIntroRunning = true;
 
-                this.particles.setAttribute('visible', 'false');
-                this.transSphere.setAttribute('visible', 'false');
+                // 1. 播放脚步声 (Fade in)
+                this.sendCmd('play_footstep');
 
-                let cam = document.querySelector('#main-camera');
-                if (cam) {
-                    let camRot = cam.getAttribute('rotation');
-                    this.lifeReviewContainer.setAttribute('rotation', `0 ${camRot.y} 0`);
-                    this.lifeReviewContainer.setAttribute('visible', 'true');
+                // 2. 4秒后播放注射声 (假设脚步走了4秒)
+                setTimeout(() => {
+                    this.sendCmd('play_injection');
 
-                    let children = this.lifeReviewContainer.querySelectorAll('.memory-fragment');
-                    let worldCenter = new THREE.Vector3(0, 1.6, 0);
+                    // 3. 再过 3秒，开始真正的黑屏转场
+                    setTimeout(() => {
+                        this.isIntroRunning = false; // 释放锁，允许转场
+                        this.startTransition('LIFE_REVIEW');
+                    }, 16000);
 
-                    children.forEach(el => {
-                        el.object3D.updateMatrixWorld(true);
-                        el.object3D.lookAt(worldCenter);
-
-                        el.setAttribute('animation', {
-                            property: 'particle-photo.opacity',
-                            from: 0.0, to: 1.0, dur: 2000, easing: 'easeOutQuad'
-                        });
-                        let bg = el.querySelector('.photo-bg');
-                        if (bg) {
-                            bg.setAttribute('animation', {
-                                property: 'material.opacity',
-                                from: 0.0, to: 0.4, dur: 2000, easing: 'easeOutQuad'
-                            });
-                        }
-                    });
-                }
-
-                let tracker = document.querySelector('[head-tracker]').components['head-tracker'];
-                if (tracker) tracker.resetCenter();
-
-                this.sendCmd('mode_review');
+                }, 10000);
             },
 
-            returnToReality: function () {
-                console.log("-> Reality");
-                this.state = 'REALITY';
-                this.sky.setAttribute('visible', 'false');
-                this.particles.setAttribute('visible', 'false');
-                this.lifeReviewContainer.setAttribute('visible', 'false');
-                this.transSphere.setAttribute('visible', 'false');
-                let mesh = this.transSphere.getObject3D('mesh');
-                if (mesh && mesh.material.uniforms) mesh.material.uniforms.uProgress.value = 0.0;
+            // [新增] 除颤仪序列
+            runDefibSequence: function () {
+                console.log("Defibrillator Sequence Started...");
+                this.isDefibRunning = true;
 
+                // 1. 播放声音
+                this.sendCmd('play_defibrillator');
+
+                // 2. 5秒时：闪回 Reality (Fadein -> Fadeout)
+                setTimeout(() => {
+                    this.flashReality();
+                }, 5500);
+
+                // 3. 9秒时：开始真正的转场
+                setTimeout(() => {
+                    this.isDefibRunning = false;
+                    this.startTransition('REALITY');
+                }, 9000);
+            },
+
+            // [新增] 闪回效果
+            flashReality: function () {
+                console.log("FLASH REALITY");
+
+                // 1. 快速淡出虚空元素 (显示Reality)
+                // Sky 变透明 (需要材质支持 transparent, 但 a-sky 默认不支持 opacity 动画，直接 visible false 最快)
+                // 但要 fade，我们需要更精细控制。
+                // 简单起见，利用 transSphere 反向操作？不行，那个是黑球。
+                // 我们直接操作 visible。为了 fade 效果，我们可以用 animation 控制 particle opacity。
+
+                // 方案：让 Sky 和 Particles 快速淡出 (Fade out Void -> Show Reality)
+                this.sky.setAttribute('visible', false); // 瞬间显示现实 (Shock effect)
+                this.particles.setAttribute('visible', false);
+
+                // 持续1秒
+                setTimeout(() => {
+                    // 恢复虚空 (Show Void -> Hide Reality)
+                    this.sky.setAttribute('visible', true);
+                    this.particles.setAttribute('visible', true);
+                }, 2000);
+            },
+
+            startTransition: function (targetState) {
+                console.log(`Starting transition: ${this.currentState} -> ${targetState}`);
+                this.targetState = targetState;
+                this.isTransitioning = true;
+                this.fadeDirection = 1;
+                this.fadeStartTime = Date.now();
+
+                this.transSphere.setAttribute('visible', true);
+
+                if (this.currentState === 'REALITY' && targetState === 'LIFE_REVIEW') {
+                    this.sendCmd('play_heartbeat_transition');
+                }
+                if (this.currentState === 'LIFE_REVIEW' && targetState === 'OBE') {
+                    this.sendCmd('fade_memories');
+                }
+            },
+
+            switchScene: function () {
+                // 1. 全局清理：彻底重置所有照片，防止在 OBE 阶段触发声音
                 let photos = document.querySelectorAll('.memory-fragment');
                 photos.forEach(el => {
-                    // 重置透明度
+                    // 强制设为完全透明 -> 阻断 tick 中的声音检测逻辑
                     el.setAttribute('particle-photo', 'opacity: 0');
-                    // 重置声音触发状态
-                    let comp = el.components['particle-photo'];
-                    if (comp) comp.hasFocus = false;
-
+                    if (el.components['particle-photo']) el.components['particle-photo'].hasFocus = false;
                     let bg = el.querySelector('.photo-bg');
                     if (bg) bg.setAttribute('material', 'opacity: 0');
                 });
-                this.sendCmd('mode_reality');
-            },
 
-            tick: function (time) {
-                if (this.state !== 'BLURRING') return;
-                let elapsed = Date.now() - this.startTime;
-                let progress = elapsed / this.duration;
-                if (progress < 1.0) {
-                    let pulse = Math.sin(elapsed * 0.005) * 0.05;
-                    let val = progress + pulse;
-                    if (progress > 0.9) val = 1.0;
-                    let mesh = this.transSphere.getObject3D('mesh');
-                    if (mesh && mesh.material.uniforms) mesh.material.uniforms.uProgress.value = val;
-                } else {
-                    this.enterVoid();
+                // 2. 隐藏旧场景
+                this.sky.setAttribute('visible', false);
+                this.particles.setAttribute('visible', false);
+                this.lifeReviewContainer.setAttribute('visible', false);
+                this.particles.removeAttribute('animation');
+                this.particles.removeAttribute('animation__rot');
+
+                // 3. 显示新场景
+                if (this.targetState === 'LIFE_REVIEW') {
+                    this.sky.setAttribute('visible', true);
+                    let cam = document.querySelector('#main-camera');
+                    let camRot = cam.getAttribute('rotation');
+                    this.lifeReviewContainer.setAttribute('rotation', `0 ${camRot.y} 0`);
+                    this.lifeReviewContainer.setAttribute('visible', true);
+
+                    let children = this.lifeReviewContainer.querySelectorAll('.memory-fragment');
+                    let worldCenter = new THREE.Vector3(0, 1.6, 0);
+                    children.forEach(el => {
+                        el.object3D.updateMatrixWorld(true);
+                        el.object3D.lookAt(worldCenter);
+                        // 重新淡入
+                        el.setAttribute('animation', { property: 'particle-photo.opacity', from: 0.0, to: 1.0, dur: 2000 });
+                        let bg = el.querySelector('.photo-bg');
+                        if (bg) bg.setAttribute('animation', { property: 'material.opacity', from: 0.0, to: 0.4, dur: 2000 });
+                    });
+
+                    document.querySelector('[head-tracker]').components['head-tracker'].resetCenter();
+                    this.sendCmd('mode_review');
                 }
+                else if (this.targetState === 'OBE') {
+                    this.sky.setAttribute('visible', true);
+                    this.particles.setAttribute('visible', true);
+                    let pMesh = this.particles.getObject3D('mesh');
+                    if (pMesh) pMesh.material.uniforms.uOpacity.value = 1.0;
+
+                    // 重置状态
+                    this.particles.setAttribute('position', '0 1.6 -2.5');
+                    this.particles.setAttribute('particle-cloud', 'dispersal: 0.0');
+
+                    // [修改] OBE 动画：只有飘散，没有下降
+                    this.particles.setAttribute('animation__disp', {
+                        property: 'particle-cloud.dispersal', from: 0.0, to: 1.0, dur: 12000, easing: 'easeInOutQuad'
+                    });
+
+                    document.querySelector('[head-tracker]').components['head-tracker'].resetCenter();
+                    this.sendCmd('mode_obe');
+                }
+                else if (this.targetState === 'REALITY') {
+                    this.sky.setAttribute('visible', false);
+                    this.sendCmd('mode_reality');
+                }
+
+                this.currentState = this.targetState;
             },
 
-            enterVoid: function () {
-                console.log("-> Void");
-                this.state = 'VOID';
-                this.sky.setAttribute('visible', 'true');
-                this.particles.setAttribute('visible', 'true');
-                this.transSphere.setAttribute('visible', 'false');
-                let pMesh = this.particles.getObject3D('mesh');
-                if (pMesh) pMesh.material.uniforms.uOpacity.value = 1.0;
-                let tracker = document.querySelector('[head-tracker]').components['head-tracker'];
-                if (tracker) tracker.resetCenter();
-                this.sendCmd('mode_void');
+            tick: function (time, delta) {
+                if (!this.isTransitioning) return;
+
+                let elapsed = Date.now() - this.fadeStartTime;
+                let halfDuration = this.fadeDuration / 2;
+                let progress;
+
+                if (this.fadeDirection === 1) {
+                    progress = elapsed / halfDuration;
+                    if (progress >= 1.0) {
+                        progress = 1.0;
+                        this.switchScene();
+                        this.fadeDirection = -1;
+                        this.fadeStartTime = Date.now();
+                    }
+                } else {
+                    progress = 1.0 - (elapsed / halfDuration);
+                    if (progress <= 0.0) {
+                        progress = 0.0;
+                        this.isTransitioning = false;
+                        this.transSphere.setAttribute('visible', false);
+                    }
+                }
+
+                let mesh = this.transSphere.getObject3D('mesh');
+                if (mesh && mesh.material.uniforms) {
+                    let noise = Math.sin(time * 0.01) * 0.05;
+                    mesh.material.uniforms.uProgress.value = Math.max(0, Math.min(1, progress + noise));
+                }
             }
         });
     </script>

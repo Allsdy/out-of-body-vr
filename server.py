@@ -10,33 +10,31 @@ app = Flask(__name__)
 # ==========================================
 try:
     pygame.mixer.init()
-    # 增加频道数量，确保背景音+心跳+多个回忆音效能同时播放
     pygame.mixer.set_num_channels(32) 
     print("✅ Pygame Audio Mixer Initialized")
 except Exception as e:
     print(f"❌ Audio Init Failed: {e}")
 
 sounds = {}
-memory_sounds = {} # 专门存储回忆音效
+memory_sounds = {} 
 
 def load_sounds():
-    """加载音效文件"""
     try:
-        # 1. 基础音效
         sounds['heartbeat'] = pygame.mixer.Sound('static/heartbeat.mp3')
         sounds['flatline']  = pygame.mixer.Sound('static/flatline.mp3')
         sounds['underwater'] = pygame.mixer.Sound('static/underwater_muffled.mp3')
-        
-        # 2. 回忆音效 (mem1.mp3 ~ mem10.mp3)
+        sounds['footstep'] = pygame.mixer.Sound('static/footstep.mp3')
+        sounds['injection'] = pygame.mixer.Sound('static/injection.mp3')
+        sounds['defibrillator'] = pygame.mixer.Sound('static/defibrillator.mp3')
+
         for i in range(1, 11):
             filename = f'static/mem/{i}.mp3'
+            if not os.path.exists(filename): filename = f'static/mem{i}.mp3'
             if os.path.exists(filename):
                 memory_sounds[i] = pygame.mixer.Sound(filename)
-                # 默认音量可以稍微大一点，依靠fade控制
                 memory_sounds[i].set_volume(1.0) 
-                print(f"  - Loaded memory sound: {filename}")
         
-        # 初始状态：闷音静音循环，心跳大声
+        # 初始状态
         sounds['underwater'].set_volume(0.0)
         sounds['underwater'].play(loops=-1)
         sounds['heartbeat'].set_volume(1.0)
@@ -48,7 +46,7 @@ def load_sounds():
 load_sounds()
 
 # ==========================================
-# 2. 视口控制 (保持不变)
+# 2. 视口控制
 # ==========================================
 view_state = {'x': 0.6, 'y': 0.5}
 
@@ -67,10 +65,9 @@ def control_view():
     return jsonify(view_state)
 
 # ==========================================
-# 3. 视频流逻辑 (保持不变)
+# 3. 视频流逻辑
 # ==========================================
 def generate_frames():
-    # 注意：确保这里的 Index 2 是你的采集卡
     camera = cv2.VideoCapture(2)
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -83,7 +80,7 @@ def generate_frames():
         else:
             frame = cv2.flip(frame, 1)
             h, w = frame.shape[:2]
-            crop_w, crop_h = int(w * 0.5), int(h * 0.5)
+            crop_w, crop_h = int(w * 0.8), int(h * 0.8)
             max_x, max_y = w - crop_w, h - crop_h
             sx = int(view_state['x'] * max_x)
             sy = int(view_state['y'] * max_y)
@@ -105,52 +102,67 @@ def index():
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# --- 音效控制接口 (修改部分) ---
+# --- 音效控制 ---
 @app.route('/trigger_effect', methods=['POST'])
 def trigger_effect():
     data = request.json
     action = data.get('action')
-    # print(f"🎛️ Audio Trigger: {action}") # debug用，太频繁可以注释掉
-
+    
     if 'heartbeat' not in sounds:
         return jsonify({"status": "error", "msg": "Sounds not loaded"})
 
-    # --- 场景切换 ---
-    if action == 'mode_void':
-        sounds['heartbeat'].fadeout(2000)
-        sounds['underwater'].set_volume(1.0)
-        sounds['flatline'].play()
-        # 进入虚空时，停止所有回忆声音
+    def stop_memories():
         for s in memory_sounds.values(): s.stop()
 
-    elif action == 'mode_review':
-        sounds['flatline'].stop()
-        sounds['underwater'].set_volume(0.2) 
+    # 1. 现实 -> 走马灯
+    if action == 'mode_review':
+        sounds['heartbeat'].fadeout(3000) 
+        sounds['underwater'].set_volume(0.4) 
+        stop_memories()
+
+    # 2. 走马灯 -> OBE
+    elif action == 'mode_obe':
+        sounds['underwater'].set_volume(1.0) 
+        # 双重保险：确保回忆声音完全停止
+        stop_memories()
     
+    # 3. OBE -> 现实
     elif action == 'mode_reality':
         sounds['underwater'].set_volume(0.0)
-        sounds['flatline'].stop()
-        sounds['heartbeat'].play(loops=1, fade_ms=3000)
-        # 回到现实，停止所有回忆声音
-        for s in memory_sounds.values(): s.stop()
+        sounds['heartbeat'].play(loops=1, fade_ms=200) 
+        stop_memories()
     
-    # --- 心跳控制 ---
-    elif action == 'play_heartbeat':
-         sounds['heartbeat'].play(loops=-1, fade_ms=2000)
-         
-    elif action == 'stop_heartbeat':
-         sounds['heartbeat'].stop()
+    # [新增]：转场期间淡出回忆
+    # 当用户按下按钮准备离开 Life Review 时触发
+    elif action == 'fade_memories':
+        # 遍历所有回忆音效，执行 4秒 的淡出
+        # 这样在屏幕完全变黑前声音就会消失
+        for s in memory_sounds.values():
+            s.fadeout(4000)
 
-    # --- [新增] 回忆聚焦逻辑 ---
+    elif action == 'play_footstep':
+        if 'footstep' in sounds:
+            # 渐入脚步声 (1秒)
+            sounds['footstep'].play(fade_ms=1000)
+            
+    elif action == 'play_injection':
+        if 'injection' in sounds:
+            sounds['injection'].play()
+
+    # 其他音效
+    elif action == 'play_defibrillator':
+        if 'defibrillator' in sounds: 
+            sounds['defibrillator'].play(loops=1, fade_ms=3000)
+
+    elif action == 'play_heartbeat_transition':
+         sounds['heartbeat'].play(loops=2, fade_ms=500)
+         
     elif action == 'focus_enter':
-        # 看向图片：播放声音，渐入 (2秒)
         img_id = data.get('id')
         if img_id in memory_sounds:
-            # loops=-1 循环播放，fade_ms=2000 渐入
-            memory_sounds[img_id].play(loops=-1, fade_ms=2000)
+            memory_sounds[img_id].play(loops=-1, fade_ms=1500)
             
     elif action == 'focus_exit':
-        # 移开视线：声音渐出停止 (1.5秒)
         img_id = data.get('id')
         if img_id in memory_sounds:
             memory_sounds[img_id].fadeout(3000)
