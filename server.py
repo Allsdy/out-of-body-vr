@@ -68,7 +68,7 @@ def control_view():
 # 3. 视频流逻辑
 # ==========================================
 def generate_frames():
-    camera = cv2.VideoCapture(2)
+    camera = cv2.VideoCapture(3)
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     camera.set(cv2.CAP_PROP_FPS, 60)
@@ -131,6 +131,13 @@ def trigger_effect():
         sounds['underwater'].set_volume(0.0)
         sounds['heartbeat'].play(loops=1, fade_ms=200) 
         stop_memories()
+
+        # [新增] 记忆洪流：所有记忆声音渐入
+    elif action == 'flood_memories':
+        for s in memory_sounds.values():
+            # 随机音量稍微不同，增加混乱感
+            s.set_volume(0.6) 
+            s.play(loops=0, fade_ms=4000) # 4秒内渐入
     
     # [新增]：转场期间淡出回忆
     # 当用户按下按钮准备离开 Life Review 时触发
