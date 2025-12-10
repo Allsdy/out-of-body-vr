@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Studio Monitor - Dynamic Shape</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            color: cyan;
+            font-family: monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .monitor-frame {
+            position: relative;
+            width: 1280px;
+            height: 720px;
+            max-width: 90%;
+            max-height: 80vh;
+            border: 2px solid #333;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.1);
+            background: #000;
+        }
+
+        img#stream {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        #particle-canvas {
+            width: 100%;
+            height: 100%;
+            display: none;
+            cursor: grab;
+        }
+
+        #particle-canvas:active {
+            cursor: grabbing;
+        }
+
+        .info-bar {
+            margin-top: 15px;
+            display: flex;
+            gap: 15px;
+            z-index: 20;
+        }
+
+        .btn {
+            background: #111;
+            color: #888;
+            border: 1px solid #333;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            background: #222;
+            color: #fff;
+        }
+
+        .btn.active {
+            background: rgba(0, 255, 255, 0.2);
+            color: cyan;
+            border-color: cyan;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+
+        .status-text {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 12px;
+            color: cyan;
+            opacity: 0.7;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 4px 8px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="monitor-frame">
+        <img id="stream" src="/video_feed" crossorigin="anonymous">
+        <div id="particle-canvas"></div>
+        <div class="status-text">CONTROLS: WASD (Shape deforms with motion)</div>
+    </div>
+
+    <div class="info-bar">
+        <button class="btn active" id="btn-raw" onclick="setMode('raw')">RAW VIDEO</button>
+        <button class="btn" id="btn-particle" onclick="setMode('particle')">PARTICLE VIEW</button>
+        <span>|</span>
+        <button class="btn" onclick="resetPos()">RESET CENTER</button>
+    </div>
+
+    <script>
+        // --- 1. 平滑物理引擎 ---
+        let position = { x: 0.5, y: 0.5 };
+        let velocity = { x: 0.0, y: 0.0 };
+        let keys = { w: false, a: false, s: false, d: false };
+
+        const PHYSICS = {
+            accel: 0.002,
+            friction: 0.92,   // 稍微增加摩擦力让停止更稳
+            maxSpeed: 0.04,   // 稍微提高极速，让形变效果更明显
+            deadZone: 0.0001
+        };
+
+        let lastSendTime = 0;
+        const SEND_INTERVAL = 30;
+
+        window.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            if (keys.hasOwnProperty(k) || k.startsWith('arrow')) {
+                if (k === 'w' || k === 'arrowup') keys.w = true;
+                if (k === 's' || k === 'arrowdown') keys.s = true;
+                if (k === 'a' || k === 'arrowleft') keys.a = true;
+                if (k === 'd' || k === 'arrowright') keys.d = true;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if (k === 'w' || k === 'arrowup') keys.w = false;
+            if (k === 's' || k === 'arrowdown') keys.s = false;
+            if (k === 'a' || k === 'arrowleft') keys.a = false;
+            if (k === 'd' || k === 'arrowright') keys.d = false;
+        });
+
+        function resetPos() {
+            position = { x: 0.5, y: 0.5 };
+            velocity = { x: 0, y: 0 };
+            sendPosition();
+        }
+
+        function updatePhysicsLoop() {
+            requestAnimationFrame(updatePhysicsLoop);
+            if (keys.w) velocity.y -= PHYSICS.accel;
+            if (keys.s) velocity.y += PHYSICS.accel;
+            if (keys.a) velocity.x -= PHYSICS.accel;
+            if (keys.d) velocity.x += PHYSICS.accel;
+
+            velocity.x = Math.max(-PHYSICS.maxSpeed, Math.min(PHYSICS.maxSpeed, velocity.x));
+            velocity.y = Math.max(-PHYSICS.maxSpeed, Math.min(PHYSICS.maxSpeed, velocity.y));
+
+            velocity.x *= PHYSICS.friction;
+            velocity.y *= PHYSICS.friction;
+
+            if (Math.abs(velocity.x) < PHYSICS.deadZone) velocity.x = 0;
+            if (Math.abs(velocity.y) < PHYSICS.deadZone) velocity.y = 0;
+
+            position.x += velocity.x;
+            position.y += velocity.y;
+            position.x = Math.max(0.0, Math.min(1.0, position.x));
+            position.y = Math.max(0.0, Math.min(1.0, position.y));
+
+            const now = Date.now();
+            if ((Math.abs(velocity.x) > 0 || Math.abs(velocity.y) > 0) && (now - lastSendTime > SEND_INTERVAL)) {
+                sendPosition();
+                lastSendTime = now;
+            }
+        }
+
+        function sendPosition() {
+            fetch('/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: position.x, y: position.y })
+            }).catch(e => { });
+        }
+
+        updatePhysicsLoop();
+
+
+        // --- 2. 视图与 Three.js ---
+        let mode = 'raw';
+        let isThreeInit = false;
+
+        function setMode(newMode) {
+            mode = newMode;
+            const img = document.getElementById('stream');
+            const canvas = document.getElementById('particle-canvas');
+            const btnRaw = document.getElementById('btn-raw');
+            const btnPart = document.getElementById('btn-particle');
+
+            if (mode === 'raw') {
+                img.style.display = 'block';
+                canvas.style.display = 'none';
+                btnRaw.classList.add('active');
+                btnPart.classList.remove('active');
+            } else {
+                img.style.display = 'none';
+                canvas.style.display = 'block';
+                btnRaw.classList.remove('active');
+                btnPart.classList.add('active');
+                if (!isThreeInit) initThreeJS();
+            }
+        }
+
+        const vertexShader = `
+          uniform float uTime; 
+          uniform sampler2D uTexture;
+          uniform vec2 uVelocity; // 接收物理引擎的速度
+          
+          varying vec3 vColor; 
+          varying float vAlpha;
+
+          void main() {
+            vec3 pos = position; 
+            vec2 uv = uv; 
+            vec2 correctedUV = uv; 
+            
+            vec4 texColor = texture2D(uTexture, correctedUV);
+            float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+
+            // --- 动态形变逻辑 ---
+            // 计算当前粒子距离中心的距离
+            float dist = distance(correctedUV, vec2(0.5, 0.5));
+            
+            // 惯性拖尾因子：边缘(dist大)受影响更大，中心受影响小
+            // pow(dist, 1.5) 让边缘的拖拽感呈指数级增加
+            float dragInfluence = pow(dist, 1.5); 
+            
+            // 施加反向拖拽 (Inertia Drag)
+            // 速度越快(uVelocity大)，拖拽越明显
+            // * 40.0 是强度系数，让微小的速度产生可见的形变
+            pos.x -= uVelocity.x * dragInfluence * 40.0;
+            pos.y -= uVelocity.y * dragInfluence * 40.0;
+
+            // 速度 Z 轴挤压 (Speed Warp)
+            // 移动越快，边缘粒子越往后(Z轴)退，制造一种冲刺的视觉冲击
+            float speed = length(uVelocity);
+            pos.z -= speed * dragInfluence * 30.0;
+
+            // ------------------
+
+            // 原始弯曲逻辑 (叠加在形变之上)
+            float zOffset = brightness * 2.0; 
+            float theta = pos.x * 0.2; 
+            float radius = 5.0 - zOffset; 
+            
+            vec3 curvedPos; 
+            curvedPos.x = radius * sin(theta);
+            curvedPos.y = pos.y; 
+            curvedPos.z = -radius * cos(theta);
+            
+            vec4 mvPosition = modelViewMatrix * vec4(curvedPos, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+
+            float sizeBase = 3.0; 
+            gl_PointSize = sizeBase * (0.5 + brightness * 2.0) * (5.0 / -mvPosition.z);
+            vColor = texColor.rgb * 0.9; 
+            
+            float edgeMask = 1.0 - smoothstep(0.4, 0.5, dist);
+            vAlpha = brightness * edgeMask;
+          }
+        `;
+
+        const fragmentShader = `
+          varying vec3 vColor; varying float vAlpha;
+          void main() {
+            vec2 center = gl_PointCoord - 0.5;
+            if (length(center) > 0.5) discard;
+            if (vAlpha < 0.01) discard;
+            gl_FragColor = vec4(vColor, vAlpha * 0.6);
+          }
+        `;
+
+        function initThreeJS() {
+            isThreeInit = true;
+            const container = document.getElementById('particle-canvas');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
+            camera.position.set(0, 0, 2.5);
+
+            const renderer = new THREE.WebGLRenderer({ alpha: true });
+            renderer.setSize(width, height);
+            container.appendChild(renderer.domElement);
+
+            const videoImage = document.getElementById('stream');
+            const texture = new THREE.Texture(videoImage);
+            texture.minFilter = THREE.LinearFilter;
+
+            const geometry = new THREE.PlaneBufferGeometry(8.0, 4.5, 80, 80);
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uTexture: { value: texture },
+                    uVelocity: { value: new THREE.Vector2(0, 0) } // 新增：速度参数
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
+            const particleMesh = new THREE.Points(geometry, material);
+            particleMesh.position.z = -2.0;
+            scene.add(particleMesh);
+
+            const pivot = new THREE.Group();
+            pivot.add(particleMesh);
+            scene.add(pivot);
+
+            const clock = new THREE.Clock();
+
+            function animate() {
+                requestAnimationFrame(animate);
+                if (mode === 'particle') {
+                    if (videoImage.complete) texture.needsUpdate = true;
+                    material.uniforms.uTime.value = clock.getElapsedTime();
+
+                    // --- 实时同步速度给 Shader ---
+                    // 这里将物理引擎计算出的 velocity 传给 Shader 做形变
+                    material.uniforms.uVelocity.value.set(velocity.x, velocity.y);
+
+                    renderer.render(scene, camera);
+                }
+            }
+            animate();
+
+            window.addEventListener('resize', () => {
+                const w = container.clientWidth; const h = container.clientHeight;
+                renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+            });
+
+            let isDragging = false; let lastX = 0; let lastY = 0;
+            container.addEventListener('mousedown', (e) => { isDragging = true; lastX = e.clientX; lastY = e.clientY; });
+            window.addEventListener('mouseup', () => isDragging = false);
+            container.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    pivot.rotation.y += (e.clientX - lastX) * 0.005;
+                    pivot.rotation.x += (e.clientY - lastY) * 0.005;
+                    lastX = e.clientX; lastY = e.clientY;
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

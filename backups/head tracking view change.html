@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Soumatou: Void Experience</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+
+    <audio id="snd-heartbeat" src="/static/heartbeat.mp3" loop preload="auto"></audio>
+    <audio id="snd-flatline" src="/static/flatline.mp3" preload="auto"></audio>
+
+    <script type="x-shader/x-vertex" id="vertexShader">
+      uniform float uTime; 
+      uniform sampler2D uTexture;
+      uniform vec2 uVelocity; 
+      varying vec3 vColor; 
+      varying float vAlpha;
+
+      void main() {
+        vec3 pos = position; 
+        vec2 uv = uv; 
+        vec4 texColor = texture2D(uTexture, uv);
+        float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+
+        float dist = distance(uv, vec2(0.5, 0.5));
+        float dragInfluence = pow(dist, 1.5); 
+        pos.x -= uVelocity.x * dragInfluence * 40.0;
+        pos.y -= uVelocity.y * dragInfluence * 40.0;
+
+        float zOffset = brightness * 2.0; 
+        float theta = pos.x * 0.2; 
+        float radius = 5.0 - zOffset; 
+        
+        vec3 curvedPos; 
+        curvedPos.x = radius * sin(theta);
+        curvedPos.y = pos.y; 
+        curvedPos.z = -radius * cos(theta);
+        
+        vec4 mvPosition = modelViewMatrix * vec4(curvedPos, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+
+        float sizeBase = 3.0; 
+        gl_PointSize = sizeBase * (0.5 + brightness * 2.0) * (5.0 / -mvPosition.z);
+        vColor = texColor.rgb * 0.9; 
+        
+        float edgeMask = 1.0 - smoothstep(0.4, 0.5, dist);
+        vAlpha = brightness * edgeMask;
+      }
+    </script>
+
+    <script type="x-shader/x-fragment" id="fragmentShader">
+      varying vec3 vColor; varying float vAlpha;
+      void main() {
+        vec2 center = gl_PointCoord - 0.5;
+        if (length(center) > 0.5) discard;
+        if (vAlpha < 0.01) discard;
+        gl_FragColor = vec4(vColor, vAlpha * 0.6);
+      }
+    </script>
+
+    <script>
+        // 1. Video Canvas
+        AFRAME.registerComponent('video-canvas', {
+            init: function () {
+                this.img = document.getElementById('source');
+                this.canvas = document.getElementById('canvas-tex');
+                this.ctx = this.canvas.getContext('2d');
+            },
+            tick: function () {
+                if (this.img.complete && this.img.naturalHeight > 0) {
+                    this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
+                    let system = document.querySelector('#particle-system');
+                    if (system) {
+                        let mesh = system.getObject3D('mesh');
+                        if (mesh && mesh.material.uniforms.uTexture.value) {
+                            mesh.material.uniforms.uTexture.value.needsUpdate = true;
+                        }
+                    }
+                }
+            }
+        });
+
+        // 2. Particle Cloud
+        AFRAME.registerComponent('particle-cloud', {
+            init: function () {
+                const geometry = new THREE.PlaneBufferGeometry(8.0, 4.5, 160, 160);
+                const canvas = document.getElementById('canvas-tex');
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.minFilter = THREE.LinearFilter;
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        uTexture: { value: texture },
+                        uVelocity: { value: new THREE.Vector2(0, 0) }
+                    },
+                    vertexShader: document.getElementById('vertexShader').textContent,
+                    fragmentShader: document.getElementById('fragmentShader').textContent,
+                    transparent: true,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending
+                });
+
+                const points = new THREE.Points(geometry, material);
+                this.el.setObject3D('mesh', points);
+            },
+            tick: function (time, delta) {
+                let mesh = this.el.getObject3D('mesh');
+                if (mesh) mesh.material.uniforms.uTime.value = time / 1000;
+            }
+        });
+
+        // 3. HEAD TRACKER
+        AFRAME.registerComponent('head-tracker', {
+            init: function () {
+                this.camEntity = document.querySelector('#main-camera');
+                this.position = { x: 0.5, y: 0.5 };
+
+                this.startQuaternion = new THREE.Quaternion();
+                this.currentQuaternion = new THREE.Quaternion();
+                this.diffEuler = new THREE.Euler();
+
+                this.lastSendTime = 0;
+                this.SEND_INTERVAL = 30;
+
+                // 灵敏度设置
+                this.SENSITIVITY_X = 1.0;
+                this.SENSITIVITY_Y = 1.0;
+
+                this.isActive = false;
+                this.debugText = document.querySelector('#debug-log');
+            },
+
+            resetCenter: function () {
+                if (!this.camEntity) return;
+                this.camEntity.object3D.getWorldQuaternion(this.startQuaternion);
+                this.isActive = true;
+                // this.updateDebug("Tracking: ON"); // Debug 已禁用
+            },
+
+            disableTracking: function () {
+                this.isActive = false;
+                // this.updateDebug("Tracking: OFF"); // Debug 已禁用
+            },
+
+            tick: function (time, delta) {
+                if (!this.isActive || !this.camEntity) {
+                    return;
+                }
+
+                this.camEntity.object3D.getWorldQuaternion(this.currentQuaternion);
+
+                let diffQ = this.startQuaternion.clone().invert().multiply(this.currentQuaternion);
+                this.diffEuler.setFromQuaternion(diffQ, 'YXZ');
+
+                let offsetX = this.diffEuler.y * this.SENSITIVITY_X;
+                let offsetY = -this.diffEuler.x * this.SENSITIVITY_Y;
+
+                let targetX = 0.5 - offsetX;
+                let targetY = 0.5 + offsetY;
+
+                this.position.x = Math.max(0.0, Math.min(1.0, targetX));
+                this.position.y = Math.max(0.0, Math.min(1.0, targetY));
+
+                // Shader Update
+                let system = document.querySelector('#particle-system');
+                if (system) {
+                    let mesh = system.getObject3D('mesh');
+                    if (mesh && mesh.material.uniforms.uVelocity) {
+                        mesh.material.uniforms.uVelocity.value.set(offsetX * 0.2, offsetY * 0.2);
+                    }
+                }
+
+                // Debug Update Logic Skipped...
+                if (this.debugText && time % 100 < 20) {
+                    // 这里的逻辑因为 HTML 元素不存在，不会执行，安全。
+                    // this.updateDebug(...) 
+                }
+
+                // Send to Python
+                const now = Date.now();
+                if (now - this.lastSendTime > this.SEND_INTERVAL) {
+                    this.sendPosition();
+                    this.lastSendTime = now;
+                }
+            },
+
+            updateDebug: function (text) {
+                if (this.debugText) this.debugText.setAttribute('value', text);
+            },
+
+            sendPosition: function () {
+                fetch('/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: this.position.x, y: this.position.y })
+                }).catch(e => { });
+            }
+        });
+
+        // 4. Mode Switcher
+        AFRAME.registerComponent('mode-switcher', {
+            init: function () {
+                this.isVoid = false;
+                this.sky = document.querySelector('#black-void');
+                this.particles = document.querySelector('#particle-system');
+
+                this.getTracker = () => {
+                    let el = document.querySelector('[head-tracker]');
+                    return el ? el.components['head-tracker'] : null;
+                };
+
+                this.heartbeat = document.getElementById('snd-heartbeat');
+                this.flatline = document.getElementById('snd-flatline');
+
+                this.toggle = this.toggle.bind(this);
+                this.el.sceneEl.addEventListener('abuttondown', this.toggle);
+                this.el.sceneEl.addEventListener('xbuttondown', this.toggle);
+
+                window.addEventListener('click', () => {
+                    if (!this.isVoid) this.heartbeat.play().catch(e => { });
+                });
+            },
+
+            toggle: function () {
+                this.isVoid = !this.isVoid;
+                let tracker = this.getTracker();
+
+                if (this.isVoid) {
+                    this.sky.setAttribute('visible', 'true');
+                    this.particles.setAttribute('visible', 'true');
+
+                    if (tracker) tracker.resetCenter();
+
+                    this.heartbeat.pause();
+                    this.flatline.currentTime = 0;
+                    this.flatline.play();
+                } else {
+                    this.sky.setAttribute('visible', 'false');
+                    this.particles.setAttribute('visible', 'false');
+
+                    if (tracker) tracker.disableTracking();
+
+                    this.flatline.pause();
+                    this.heartbeat.play();
+                }
+            }
+        });
+    </script>
+</head>
+
+<body>
+
+    <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
+    <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
+
+    <a-scene>
+        <a-sky id="black-void" color="#000" radius="4000" visible="false"></a-sky>
+
+        <a-entity id="particle-system" particle-cloud video-canvas position="0 1.6 -2.5" visible="false"></a-entity>
+
+        <a-entity position="0 1.6 0">
+            <a-camera id="main-camera" look-controls="enabled: true" wasd-controls="false">
+            </a-camera>
+        </a-entity>
+
+        <a-entity oculus-touch-controls="hand: left" mode-switcher></a-entity>
+        <a-entity oculus-touch-controls="hand: right" mode-switcher head-tracker></a-entity>
+
+    </a-scene>
+
+</body>
+
+</html>

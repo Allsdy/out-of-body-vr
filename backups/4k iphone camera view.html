@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Soumatou Experience</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+
+    <audio id="snd-heartbeat" src="/static/heartbeat.mp3" loop preload="auto"></audio>
+    <audio id="snd-flatline" src="/static/flatline.mp3" preload="auto"></audio>
+
+    <script>
+      // 1. VIDEO PAINTER
+      AFRAME.registerComponent('video-canvas', {
+        init: function () {
+          this.img = document.getElementById('source');
+          this.canvas = document.getElementById('canvas-tex');
+          this.ctx = this.canvas.getContext('2d');
+          this.ctx.globalCompositeOperation = 'copy';
+        },
+        tick: function () {
+          if (this.img.complete && this.img.naturalHeight > 0) {
+            this.ctx.drawImage(this.img, 0, 0, this.canvas.width, this.canvas.height);
+            let mesh = this.el.getObject3D('mesh');
+            if (mesh && mesh.material.map) {
+              mesh.material.map.needsUpdate = true;
+            }
+          }
+        }
+      });
+
+      // 2. SOUL TRIGGER
+      AFRAME.registerComponent('soul-trigger', {
+        init: function() {
+          this.heartbeat = document.getElementById('snd-heartbeat');
+          this.flatline = document.getElementById('snd-flatline');
+          this.isDead = false;
+
+          this.startAudio = this.startAudio.bind(this);
+          this.detachSoul = this.detachSoul.bind(this);
+
+          this.el.sceneEl.addEventListener('enter-vr', this.startAudio);
+          this.el.addEventListener('triggerdown', this.handleTrigger.bind(this));
+          this.el.addEventListener('abuttondown', this.detachSoul);
+          this.el.addEventListener('xbuttondown', this.detachSoul);
+          window.addEventListener('click', this.startAudio);
+
+          // Listen for Animation End
+          let screen = document.querySelector('#spirit-screen');
+          screen.addEventListener('animationcomplete', () => {
+             this.finalizeDeath();
+          });
+        },
+
+        startAudio: function() {
+          if (!this.isDead && this.heartbeat.paused) {
+            this.heartbeat.play().catch(e => console.log(e));
+          }
+        },
+
+        handleTrigger: function() {
+          this.startAudio();
+        },
+
+        detachSoul: function() {
+          if (this.isDead) return;
+          this.isDead = true;
+          
+          this.heartbeat.pause();
+          this.heartbeat.currentTime = 0;
+          this.flatline.play();
+
+          let screen = document.querySelector('#spirit-screen');
+          screen.setAttribute('animation', {
+            property: 'material.opacity',
+            from: 0,
+            to: 1,
+            dur: 8000, 
+            easing: 'easeInOutSine'
+          });
+        },
+
+        finalizeDeath: function() {
+          console.log("Blocking AR view...");
+          
+          // 1. TURN ON THE BLACK VOID
+          // This creates a solid black sphere around you, blocking the camera passthrough
+          let voidSphere = document.querySelector('#black-void');
+          voidSphere.setAttribute('visible', 'true');
+
+          // 2. Disable transparency on the video screen
+          // This tells the GPU "don't try to blend this with the background anymore"
+          let screen = document.querySelector('#spirit-screen');
+          screen.setAttribute('material', 'transparent', false);
+        }
+      });
+    </script>
+  </head>
+  <body>
+    
+    <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
+    <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
+
+    <a-scene>
+      
+      <a-sky id="black-void" color="#000" radius="4000" visible="false"></a-sky>
+
+      <a-curvedimage 
+        id="spirit-screen"
+        video-canvas
+        src="#canvas-tex"
+        height="9.0" 
+        radius="2.0" 
+        theta-length="180" 
+        rotation="0 270 0" 
+        position="0 1.5 0"
+        scale="-1 1 1"
+        material="shader: flat; side: double; transparent: true; opacity: 0; depthTest: false">
+      </a-curvedimage>
+
+      <a-entity oculus-touch-controls="hand: left" soul-trigger></a-entity>
+      <a-entity oculus-touch-controls="hand: right" soul-trigger></a-entity>
+
+      <a-entity position="0 1.6 0">
+        <a-camera look-controls wasd-controls="false"></a-camera>
+      </a-entity>
+      
+    </a-scene>
+  </body>
+</html>

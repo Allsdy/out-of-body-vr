@@ -2,14 +2,14 @@
 <html>
 
 <head>
-    <title>Studio Monitor - Dynamic Shape</title>
+    <title>Studio Monitor - Silky Smooth</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <style>
         body {
             margin: 0;
             background-color: #000;
-            color: cyan;
+            color: #fff;
             font-family: monospace;
             display: flex;
             flex-direction: column;
@@ -26,8 +26,7 @@
             height: 720px;
             max-width: 90%;
             max-height: 80vh;
-            border: 2px solid #333;
-            box-shadow: 0 0 30px rgba(0, 255, 255, 0.1);
+            border: 1px solid #333;
             background: #000;
         }
 
@@ -49,6 +48,35 @@
             cursor: grabbing;
         }
 
+        .grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            opacity: 0.2;
+            z-index: 10;
+        }
+
+        .crosshair-x {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .crosshair-y {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 1px;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.3);
+        }
+
         .info-bar {
             margin-top: 15px;
             display: flex;
@@ -57,37 +85,39 @@
         }
 
         .btn {
-            background: #111;
-            color: #888;
+            background: #000;
+            color: #666;
             border: 1px solid #333;
             padding: 8px 16px;
             cursor: pointer;
             font-family: monospace;
             font-weight: bold;
             transition: 0.2s;
+            letter-spacing: 1px;
+            text-transform: uppercase;
         }
 
         .btn:hover {
-            background: #222;
+            background: #111;
             color: #fff;
+            border-color: #fff;
         }
 
         .btn.active {
-            background: rgba(0, 255, 255, 0.2);
-            color: cyan;
-            border-color: cyan;
-            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+            background: #fff;
+            color: #000;
+            border-color: #fff;
         }
 
         .status-text {
             position: absolute;
             bottom: 10px;
             left: 10px;
-            font-size: 12px;
-            color: cyan;
-            opacity: 0.7;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 4px 8px;
+            font-size: 10px;
+            color: #fff;
+            background: #000;
+            padding: 2px 6px;
+            border: 1px solid #333;
         }
     </style>
 </head>
@@ -97,42 +127,44 @@
     <div class="monitor-frame">
         <img id="stream" src="/video_feed" crossorigin="anonymous">
         <div id="particle-canvas"></div>
-        <div class="status-text">CONTROLS: WASD (Shape deforms with motion)</div>
+        <div class="grid-overlay">
+            <div class="crosshair-x"></div>
+            <div class="crosshair-y"></div>
+        </div>
+        <div class="status-text">MODE: HYPER-REALITY [FLUID MOTION]</div>
     </div>
 
     <div class="info-bar">
-        <button class="btn active" id="btn-raw" onclick="setMode('raw')">RAW VIDEO</button>
-        <button class="btn" id="btn-particle" onclick="setMode('particle')">PARTICLE VIEW</button>
+        <button class="btn active" id="btn-raw" onclick="setMode('raw')">OPTICAL</button>
+        <button class="btn" id="btn-particle" onclick="setMode('particle')">DIGITAL</button>
         <span>|</span>
-        <button class="btn" onclick="resetPos()">RESET CENTER</button>
+        <button class="btn" onclick="resetPos()">RESET SENSOR</button>
     </div>
 
     <script>
-        // --- 1. 平滑物理引擎 ---
+        // --- 1. 物理控制 (丝滑调教版) ---
         let position = { x: 0.5, y: 0.5 };
         let velocity = { x: 0.0, y: 0.0 };
         let keys = { w: false, a: false, s: false, d: false };
 
+        // 【关键修改】让移动像在冰面/液体中一样顺滑
         const PHYSICS = {
-            accel: 0.002,
-            friction: 0.92,   // 稍微增加摩擦力让停止更稳
-            maxSpeed: 0.04,   // 稍微提高极速，让形变效果更明显
-            deadZone: 0.0001
+            accel: 0.001,      // 加速度减小：起步更柔和
+            friction: 0.94,    // 摩擦力系数增加(接近1)：滑行距离更长，甚至有漂移感
+            maxSpeed: 0.035,   // 极速微调：配合高惯性，防止太快晕头
+            deadZone: 0.00001  // 死区更小，捕捉微小移动
         };
 
         let lastSendTime = 0;
-        const SEND_INTERVAL = 30;
+        const SEND_INTERVAL = 30; // 30ms 约为 33fps 的同步率
 
         window.addEventListener('keydown', (e) => {
             const k = e.key.toLowerCase();
-            if (keys.hasOwnProperty(k) || k.startsWith('arrow')) {
-                if (k === 'w' || k === 'arrowup') keys.w = true;
-                if (k === 's' || k === 'arrowdown') keys.s = true;
-                if (k === 'a' || k === 'arrowleft') keys.a = true;
-                if (k === 'd' || k === 'arrowright') keys.d = true;
-            }
+            if (k === 'w' || k === 'arrowup') keys.w = true;
+            if (k === 's' || k === 'arrowdown') keys.s = true;
+            if (k === 'a' || k === 'arrowleft') keys.a = true;
+            if (k === 'd' || k === 'arrowright') keys.d = true;
         });
-
         window.addEventListener('keyup', (e) => {
             const k = e.key.toLowerCase();
             if (k === 'w' || k === 'arrowup') keys.w = false;
@@ -141,11 +173,7 @@
             if (k === 'd' || k === 'arrowright') keys.d = false;
         });
 
-        function resetPos() {
-            position = { x: 0.5, y: 0.5 };
-            velocity = { x: 0, y: 0 };
-            sendPosition();
-        }
+        function resetPos() { position = { x: 0.5, y: 0.5 }; velocity = { x: 0, y: 0 }; sendPosition(); }
 
         function updatePhysicsLoop() {
             requestAnimationFrame(updatePhysicsLoop);
@@ -157,36 +185,31 @@
             velocity.x = Math.max(-PHYSICS.maxSpeed, Math.min(PHYSICS.maxSpeed, velocity.x));
             velocity.y = Math.max(-PHYSICS.maxSpeed, Math.min(PHYSICS.maxSpeed, velocity.y));
 
+            // 摩擦力应用
             velocity.x *= PHYSICS.friction;
             velocity.y *= PHYSICS.friction;
 
             if (Math.abs(velocity.x) < PHYSICS.deadZone) velocity.x = 0;
             if (Math.abs(velocity.y) < PHYSICS.deadZone) velocity.y = 0;
 
-            position.x += velocity.x;
-            position.y += velocity.y;
+            position.x += velocity.x; position.y += velocity.y;
             position.x = Math.max(0.0, Math.min(1.0, position.x));
             position.y = Math.max(0.0, Math.min(1.0, position.y));
 
             const now = Date.now();
             if ((Math.abs(velocity.x) > 0 || Math.abs(velocity.y) > 0) && (now - lastSendTime > SEND_INTERVAL)) {
-                sendPosition();
-                lastSendTime = now;
+                sendPosition(); lastSendTime = now;
             }
         }
-
         function sendPosition() {
             fetch('/control', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ x: position.x, y: position.y })
             }).catch(e => { });
         }
-
         updatePhysicsLoop();
 
-
-        // --- 2. 视图与 Three.js ---
+        // --- 2. 视图切换 ---
         let mode = 'raw';
         let isThreeInit = false;
 
@@ -198,23 +221,20 @@
             const btnPart = document.getElementById('btn-particle');
 
             if (mode === 'raw') {
-                img.style.display = 'block';
-                canvas.style.display = 'none';
-                btnRaw.classList.add('active');
-                btnPart.classList.remove('active');
+                img.style.display = 'block'; canvas.style.display = 'none';
+                btnRaw.classList.add('active'); btnPart.classList.remove('active');
             } else {
-                img.style.display = 'none';
-                canvas.style.display = 'block';
-                btnRaw.classList.remove('active');
-                btnPart.classList.add('active');
+                img.style.display = 'none'; canvas.style.display = 'block';
+                btnRaw.classList.remove('active'); btnPart.classList.add('active');
                 if (!isThreeInit) initThreeJS();
             }
         }
 
+        // --- 3. HYPER-REALITY SHADER (保持不变，因为效果很好) ---
         const vertexShader = `
           uniform float uTime; 
           uniform sampler2D uTexture;
-          uniform vec2 uVelocity; // 接收物理引擎的速度
+          uniform vec2 uVelocity;
           
           varying vec3 vColor; 
           varying float vAlpha;
@@ -222,61 +242,52 @@
           void main() {
             vec3 pos = position; 
             vec2 uv = uv; 
-            vec2 correctedUV = uv; 
             
-            vec4 texColor = texture2D(uTexture, correctedUV);
-            float brightness = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+            // --- 1. 光谱分离 (RGB Shift) ---
+            // 配合丝滑的 velocity，这个色散效果也会变得非常平滑
+            float shift = 0.5; 
+            vec2 rUV = uv + uVelocity * shift; 
+            vec2 bUV = uv - uVelocity * shift;
+            
+            vec4 texColor = texture2D(uTexture, uv);
+            float r = texture2D(uTexture, rUV).r;
+            float g = texColor.g;
+            float b = texture2D(uTexture, bUV).b;
+            
+            float brightness = dot(vec3(r,g,b), vec3(0.299, 0.587, 0.114));
 
-            // --- 动态形变逻辑 ---
-            // 计算当前粒子距离中心的距离
-            float dist = distance(correctedUV, vec2(0.5, 0.5));
-            
-            // 惯性拖尾因子：边缘(dist大)受影响更大，中心受影响小
-            // pow(dist, 1.5) 让边缘的拖拽感呈指数级增加
-            float dragInfluence = pow(dist, 1.5); 
-            
-            // 施加反向拖拽 (Inertia Drag)
-            // 速度越快(uVelocity大)，拖拽越明显
-            // * 40.0 是强度系数，让微小的速度产生可见的形变
-            pos.x -= uVelocity.x * dragInfluence * 40.0;
-            pos.y -= uVelocity.y * dragInfluence * 40.0;
+            // --- 2. 几何结构 (Lidar Depth) ---
+            float zOffset = brightness * 3.0; 
+            pos.z += zOffset;
 
-            // 速度 Z 轴挤压 (Speed Warp)
-            // 移动越快，边缘粒子越往后(Z轴)退，制造一种冲刺的视觉冲击
-            float speed = length(uVelocity);
-            pos.z -= speed * dragInfluence * 30.0;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
 
-            // ------------------
+            // --- 3. 粒子大小 (Square & Sharp) ---
+            float sizeBase = 2.5; 
+            float distToCam = max(1.0, -gl_Position.z);
+            gl_PointSize = sizeBase * (1.0 + brightness * 1.5) * (8.0 / distToCam);
+            
+            // --- 4. 颜色与托底 ---
+            vColor = vec3(r, g, b);
+            vColor = pow(vColor, vec3(1.2)) * 1.5;
 
-            // 原始弯曲逻辑 (叠加在形变之上)
-            float zOffset = brightness * 2.0; 
-            float theta = pos.x * 0.2; 
-            float radius = 5.0 - zOffset; 
+            if (length(vColor) < 0.1) {
+                vColor = vec3(0.05, 0.05, 0.05);
+            }
             
-            vec3 curvedPos; 
-            curvedPos.x = radius * sin(theta);
-            curvedPos.y = pos.y; 
-            curvedPos.z = -radius * cos(theta);
-            
-            vec4 mvPosition = modelViewMatrix * vec4(curvedPos, 1.0);
-            gl_Position = projectionMatrix * mvPosition;
-
-            float sizeBase = 3.0; 
-            gl_PointSize = sizeBase * (0.5 + brightness * 2.0) * (5.0 / -mvPosition.z);
-            vColor = texColor.rgb * 0.9; 
-            
-            float edgeMask = 1.0 - smoothstep(0.4, 0.5, dist);
-            vAlpha = brightness * edgeMask;
+            // --- 5. 硬边缘裁切 ---
+            float edgeX = step(0.49, abs(uv.x - 0.5));
+            float edgeY = step(0.49, abs(uv.y - 0.5));
+            vAlpha = 1.0 - max(edgeX, edgeY);
           }
         `;
 
         const fragmentShader = `
-          varying vec3 vColor; varying float vAlpha;
+          varying vec3 vColor;
+          varying float vAlpha;
           void main() {
-            vec2 center = gl_PointCoord - 0.5;
-            if (length(center) > 0.5) discard;
-            if (vAlpha < 0.01) discard;
-            gl_FragColor = vec4(vColor, vAlpha * 0.6);
+            if (vAlpha < 0.1) discard;
+            gl_FragColor = vec4(vColor, 1.0); 
           }
         `;
 
@@ -285,36 +296,41 @@
             const container = document.getElementById('particle-canvas');
             const width = container.clientWidth;
             const height = container.clientHeight;
+
             const scene = new THREE.Scene();
             const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
-            camera.position.set(0, 0, 2.5);
+            camera.position.set(0, 0, 3.2);
 
-            const renderer = new THREE.WebGLRenderer({ alpha: true });
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
             renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
             container.appendChild(renderer.domElement);
 
             const videoImage = document.getElementById('stream');
-            const texture = new THREE.Texture(videoImage);
-            texture.minFilter = THREE.LinearFilter;
 
-            const geometry = new THREE.PlaneBufferGeometry(8.0, 4.5, 80, 80);
+            const texture = new THREE.Texture(videoImage);
+            texture.minFilter = THREE.NearestFilter;
+            texture.magFilter = THREE.NearestFilter;
+
+            const pWidth = 512;
+            const pHeight = 288;
+            const geometry = new THREE.PlaneBufferGeometry(8.0, 4.5, pWidth, pHeight);
 
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     uTime: { value: 0 },
                     uTexture: { value: texture },
-                    uVelocity: { value: new THREE.Vector2(0, 0) } // 新增：速度参数
+                    uVelocity: { value: new THREE.Vector2(0, 0) }
                 },
                 vertexShader: vertexShader,
                 fragmentShader: fragmentShader,
                 transparent: true,
                 depthWrite: false,
-                blending: THREE.AdditiveBlending
+                blending: THREE.NormalBlending
             });
 
             const particleMesh = new THREE.Points(geometry, material);
-            particleMesh.position.z = -2.0;
-            scene.add(particleMesh);
+            particleMesh.position.z = -1.0;
 
             const pivot = new THREE.Group();
             pivot.add(particleMesh);
@@ -325,24 +341,28 @@
             function animate() {
                 requestAnimationFrame(animate);
                 if (mode === 'particle') {
-                    if (videoImage.complete) texture.needsUpdate = true;
+                    if (videoImage.complete) {
+                        texture.needsUpdate = true;
+                    }
+
                     material.uniforms.uTime.value = clock.getElapsedTime();
-
-                    // --- 实时同步速度给 Shader ---
-                    // 这里将物理引擎计算出的 velocity 传给 Shader 做形变
+                    // 传递丝滑的速度值给 shader
                     material.uniforms.uVelocity.value.set(velocity.x, velocity.y);
-
                     renderer.render(scene, camera);
                 }
             }
             animate();
 
             window.addEventListener('resize', () => {
-                const w = container.clientWidth; const h = container.clientHeight;
-                renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+                const w = container.clientWidth;
+                const h = container.clientHeight;
+                renderer.setSize(w, h);
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
             });
 
-            let isDragging = false; let lastX = 0; let lastY = 0;
+            let isDragging = false;
+            let lastX = 0; let lastY = 0;
             container.addEventListener('mousedown', (e) => { isDragging = true; lastX = e.clientX; lastY = e.clientY; });
             window.addEventListener('mouseup', () => isDragging = false);
             container.addEventListener('mousemove', (e) => {

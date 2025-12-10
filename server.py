@@ -1,13 +1,56 @@
 import cv2
 from flask import Flask, render_template, Response, request, jsonify
+import pygame 
+import os
 
 app = Flask(__name__)
 
-# --- 全局视口状态 ---
-view_state = {
-    'x': 0.5,
-    'y': 0.5
-}
+# ==========================================
+# 1. 音频系统初始化
+# ==========================================
+try:
+    pygame.mixer.init()
+    # 增加频道数量，确保背景音+心跳+多个回忆音效能同时播放
+    pygame.mixer.set_num_channels(32) 
+    print("✅ Pygame Audio Mixer Initialized")
+except Exception as e:
+    print(f"❌ Audio Init Failed: {e}")
+
+sounds = {}
+memory_sounds = {} # 专门存储回忆音效
+
+def load_sounds():
+    """加载音效文件"""
+    try:
+        # 1. 基础音效
+        sounds['heartbeat'] = pygame.mixer.Sound('static/heartbeat.mp3')
+        sounds['flatline']  = pygame.mixer.Sound('static/flatline.mp3')
+        sounds['underwater'] = pygame.mixer.Sound('static/underwater_muffled.mp3')
+        
+        # 2. 回忆音效 (mem1.mp3 ~ mem10.mp3)
+        for i in range(1, 11):
+            filename = f'static/mem/{i}.mp3'
+            if os.path.exists(filename):
+                memory_sounds[i] = pygame.mixer.Sound(filename)
+                # 默认音量可以稍微大一点，依靠fade控制
+                memory_sounds[i].set_volume(1.0) 
+                print(f"  - Loaded memory sound: {filename}")
+        
+        # 初始状态：闷音静音循环，心跳大声
+        sounds['underwater'].set_volume(0.0)
+        sounds['underwater'].play(loops=-1)
+        sounds['heartbeat'].set_volume(1.0)
+        
+        print("✅ Sounds loaded successfully")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not load sound files. Details: {e}")
+
+load_sounds()
+
+# ==========================================
+# 2. 视口控制 (保持不变)
+# ==========================================
+view_state = {'x': 0.6, 'y': 0.5}
 
 @app.after_request
 def add_header(response):
@@ -17,23 +60,18 @@ def add_header(response):
 
 @app.route('/control', methods=['POST'])
 def control_view():
-    """直接接收前端计算好的精确坐标"""
     data = request.json
     global view_state
-    
-    # 前端现在负责计算平滑度，直接把坐标传过来即可
-    if 'x' in data:
-        view_state['x'] = max(0.0, min(1.0, float(data['x'])))
-    if 'y' in data:
-        view_state['y'] = max(0.0, min(1.0, float(data['y'])))
-        
+    if 'x' in data: view_state['x'] = max(0.0, min(1.0, float(data['x'])))
+    if 'y' in data: view_state['y'] = max(0.0, min(1.0, float(data['y'])))
     return jsonify(view_state)
 
+# ==========================================
+# 3. 视频流逻辑 (保持不变)
+# ==========================================
 def generate_frames():
-    # 使用你之前测试成功的 Index (例如 2)
+    # 注意：确保这里的 Index 2 是你的采集卡
     camera = cv2.VideoCapture(2)
-    
-    # 强制高分辨率和高帧率
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     camera.set(cv2.CAP_PROP_FPS, 60)
@@ -41,39 +79,24 @@ def generate_frames():
 
     while True:
         success, frame = camera.read()
-        if not success:
-            break
+        if not success: break
         else:
             frame = cv2.flip(frame, 1)
-
-            # --- 动态裁切逻辑 (和之前一样，但坐标源变平滑了) ---
             h, w = frame.shape[:2]
-            crop_w = int(w * 0.5)
-            crop_h = int(h * 0.5)
-            
-            max_x_offset = w - crop_w
-            max_y_offset = h - crop_h
-            
-            # 使用全局平滑坐标
-            start_x = int(view_state['x'] * max_x_offset)
-            start_y = int(view_state['y'] * max_y_offset)
-            
-            # 边界安全检查
-            start_x = max(0, min(start_x, w - crop_w))
-            start_y = max(0, min(start_y, h - crop_h))
-            
-            end_x = start_x + crop_w
-            end_y = start_y + crop_h
+            crop_w, crop_h = int(w * 0.5), int(h * 0.5)
+            max_x, max_y = w - crop_w, h - crop_h
+            sx = int(view_state['x'] * max_x)
+            sy = int(view_state['y'] * max_y)
+            sx = max(0, min(sx, max_x))
+            sy = max(0, min(sy, max_y))
+            cropped = frame[sy:sy+crop_h, sx:sx+crop_w]
+            frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+            ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
-            cropped_frame = frame[start_y:end_y, start_x:end_x]
-            frame = cv2.resize(cropped_frame, (w, h), interpolation=cv2.INTER_LINEAR)
-            
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
-            ret, buffer = cv2.imencode('.jpg', frame, encode_param)
-            frame_bytes = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
+# ==========================================
+# 4. 路由定义
+# ==========================================
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -82,9 +105,57 @@ def index():
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/monitor')
-def monitor():
-    return render_template('monitor.html')
+# --- 音效控制接口 (修改部分) ---
+@app.route('/trigger_effect', methods=['POST'])
+def trigger_effect():
+    data = request.json
+    action = data.get('action')
+    # print(f"🎛️ Audio Trigger: {action}") # debug用，太频繁可以注释掉
+
+    if 'heartbeat' not in sounds:
+        return jsonify({"status": "error", "msg": "Sounds not loaded"})
+
+    # --- 场景切换 ---
+    if action == 'mode_void':
+        sounds['heartbeat'].fadeout(2000)
+        sounds['underwater'].set_volume(1.0)
+        sounds['flatline'].play()
+        # 进入虚空时，停止所有回忆声音
+        for s in memory_sounds.values(): s.stop()
+
+    elif action == 'mode_review':
+        sounds['flatline'].stop()
+        sounds['underwater'].set_volume(0.2) 
+    
+    elif action == 'mode_reality':
+        sounds['underwater'].set_volume(0.0)
+        sounds['flatline'].stop()
+        sounds['heartbeat'].play(loops=1, fade_ms=3000)
+        # 回到现实，停止所有回忆声音
+        for s in memory_sounds.values(): s.stop()
+    
+    # --- 心跳控制 ---
+    elif action == 'play_heartbeat':
+         sounds['heartbeat'].play(loops=-1, fade_ms=2000)
+         
+    elif action == 'stop_heartbeat':
+         sounds['heartbeat'].stop()
+
+    # --- [新增] 回忆聚焦逻辑 ---
+    elif action == 'focus_enter':
+        # 看向图片：播放声音，渐入 (2秒)
+        img_id = data.get('id')
+        if img_id in memory_sounds:
+            # loops=-1 循环播放，fade_ms=2000 渐入
+            memory_sounds[img_id].play(loops=-1, fade_ms=2000)
+            
+    elif action == 'focus_exit':
+        # 移开视线：声音渐出停止 (1.5秒)
+        img_id = data.get('id')
+        if img_id in memory_sounds:
+            memory_sounds[img_id].fadeout(3000)
+
+    return jsonify({"status": "ok", "action": action})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, ssl_context='adhoc', debug=True)
+    app.run(host='0.0.0.0', port=5001, ssl_context='adhoc', debug=False)
