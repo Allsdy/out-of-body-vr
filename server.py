@@ -156,6 +156,10 @@ def trigger_effect():
         if 'injection' in sounds:
             sounds['injection'].play()
 
+    elif action == 'play_flatline':
+        if 'flatline' in sounds:
+            sounds['flatline'].play()
+
     # 其他音效
     elif action == 'play_defibrillator':
         if 'defibrillator' in sounds: 
@@ -167,7 +171,7 @@ def trigger_effect():
     elif action == 'focus_enter':
         img_id = data.get('id')
         if img_id in memory_sounds:
-            memory_sounds[img_id].play(loops=-1, fade_ms=1500)
+            memory_sounds[img_id].play(loops=-1, fade_ms=1000)
             
     elif action == 'focus_exit':
         img_id = data.get('id')

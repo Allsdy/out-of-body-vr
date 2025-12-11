@@ -4,6 +4,7 @@
 <head>
     <title>Soumatou: Tunnel Transition</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
 
     <script type="x-shader/x-vertex" id="transVertex">
         varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
@@ -194,6 +195,63 @@
     </script>
 
     <script>
+        // [新增] 专门用于播放粒子视频的组件
+        AFRAME.registerComponent('particle-video', {
+            schema: { srcId: { type: 'string' }, width: { type: 'number', default: 1.6 }, height: { type: 'number', default: 0.9 } },
+            init: function () {
+                const videoEl = document.getElementById(this.data.srcId);
+
+                // 1. 创建 Video Texture
+                const texture = new THREE.VideoTexture(videoEl);
+                texture.minFilter = THREE.LinearFilter;
+                texture.format = THREE.RGBFormat;
+
+                // 2. 创建几何体 (分辨率设低一点以保性能: 60x40 足够了)
+                const geometry = new THREE.PlaneBufferGeometry(this.data.width, this.data.height, 120, 80);
+
+                // 3. 复用现有的 Photo Shader
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uOpacity: { value: 0.0 }, // 初始透明
+                        uTexture: { value: texture },
+                        uTime: { value: 0 },
+                        uCamPos: { value: new THREE.Vector3() },
+                        uCamDir: { value: new THREE.Vector3(0, 0, -1) },
+                        uTunnel: { value: 0.0 },
+                        // 视频不需要聚光灯效果，直接全亮
+                        uSkipSpotlight: { value: 1.0 }
+                    },
+                    vertexShader: document.getElementById('photoVertex').textContent,
+                    fragmentShader: document.getElementById('photoFragment').textContent,
+                    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+                });
+
+                const points = new THREE.Points(geometry, material);
+                // 防止视锥剔除导致视频消失
+                points.frustumCulled = false;
+
+                this.el.setObject3D('mesh', points);
+                this.material = material;
+                this.videoEl = videoEl;
+
+                this.camPos = new THREE.Vector3();
+                this.camDir = new THREE.Vector3();
+            },
+            tick: function (time) {
+                if (!this.material) return;
+                this.material.uniforms.uTime.value = time / 1000;
+
+                // 更新相机位置用于粒子朝向计算
+                let camera = this.el.sceneEl.camera;
+                if (camera) {
+                    camera.getWorldPosition(this.camPos);
+                    camera.getWorldDirection(this.camDir);
+                    this.material.uniforms.uCamPos.value.copy(this.camPos);
+                    this.material.uniforms.uCamDir.value.copy(this.camDir);
+                }
+            }
+        });
+
         // 1. Photo Component
         AFRAME.registerComponent('particle-photo', {
             schema: {
@@ -420,14 +478,86 @@
             runIntroSequence: function () {
                 console.log("Intro Sequence Started...");
                 this.isIntroRunning = true;
+
+                // let doctor = document.querySelector('#doctor-entity');
+                let injectEntity = document.querySelector('#intro-injection');
+                let videoEl = document.getElementById('injection-video');
+
                 this.sendCmd('play_footstep');
+
+                // 3. 计算位置：把视频放在用户正前方 1.2米处
+                if (injectEntity) {
+                    let camera = this.el.sceneEl.camera;
+                    let camPos = new THREE.Vector3();
+                    let camDir = new THREE.Vector3();
+                    camera.getWorldPosition(camPos);
+                    camera.getWorldDirection(camDir);
+                    camDir.y = 0; camDir.normalize(); // 忽略高度，只看水平前方
+
+                    let targetPos = camPos.clone().add(camDir.multiplyScalar(1.2));
+                    targetPos.y = camPos.y; // 视频高度和视线齐平
+
+                    injectEntity.setAttribute('position', targetPos);
+                    injectEntity.object3D.lookAt(camPos); // 面向用户
+                }
+
+                // if (doctor) {
+                //     doctor.setAttribute('visible', true);
+                //     // 如果模型有走路动画，可以在这里设为 'Walk'
+                //     // doctor.setAttribute('animation-mixer', 'clip: Walk; loop: repeat');
+
+                //     // 也可以简单的做一个透明度渐变出现
+                //     doctor.setAttribute('animation', {
+                //         property: 'scale', from: '0 0 0', to: '1 1 1', dur: 2000
+                //     });
+
+                //     doctor.setAttribute('animation-mixer', {
+                //         clip: 'Entering Code',
+                //         loop: 'once',
+                //         timeScale: 1,
+                //         clampWhenFinished: true
+                //     });
+
+                //     doctor.setAttribute('animation', {
+                //         property: 'scale', to: '0 0 0', dur: 1000
+                //     });
+                // }
                 setTimeout(() => {
-                    this.sendCmd('play_injection');
+
+                    if (injectEntity && videoEl) {
+                        // 显示粒子视频
+                        injectEntity.setAttribute('visible', true);
+
+                        // 播放视频
+                        videoEl.currentTime = 0;
+                        videoEl.play();
+
+                        // 粒子淡入动画 (0 -> 1)
+                        let mesh = injectEntity.getObject3D('mesh');
+                        if (mesh) {
+                            // 手动做一个简单的淡入，或者用 A-Frame animation
+                            mesh.material.uniforms.uOpacity.value = 0.0;
+                            // 使用简单的 interval 模拟淡入，比 animation 组件更灵活
+                            let fadeInt = setInterval(() => {
+                                mesh.material.uniforms.uOpacity.value += 0.05;
+                                if (mesh.material.uniforms.uOpacity.value >= 1.0) clearInterval(fadeInt);
+                            }, 50);
+                        }
+                        // injectEntity.setAttribute('visible', false);
+                    }
+
                     setTimeout(() => {
-                        this.isIntroRunning = false;
-                        this.startTransition('LIFE_REVIEW');
-                    }, 10000);
-                }, 10000);
+                        this.sendCmd('play_injection');
+                        injectEntity.setAttribute('visible', false);
+                        setTimeout(() => {
+                            this.sendCmd('play_flatline');
+                            setTimeout(() => {
+                                this.isIntroRunning = false;
+                                this.startTransition('LIFE_REVIEW');
+                            }, 12000);
+                        }, 14000);
+                    }, 9000);
+                }, 7000);
             },
 
             // [新增] 隧道穿梭序列
@@ -547,7 +677,7 @@
                 this.fadeStartTime = Date.now();
                 this.transSphere.setAttribute('visible', true);
                 if (this.currentState === 'REALITY' && targetState === 'LIFE_REVIEW') {
-                    this.sendCmd('play_heartbeat_transition');
+                    // this.sendCmd('play_heartbeat_transition');
                 }
             },
 
@@ -625,6 +755,9 @@
 <body>
     <img id="source" src="/video_feed" crossorigin="anonymous" style="display:none;">
     <canvas id="canvas-tex" width="1280" height="720" style="display:none;"></canvas>
+    <video id="injection-video" src="/static/injection.mp4" crossorigin="anonymous" playsinline webkit-playsinline muted
+        loop style="display:none;">
+    </video>
 
     <a-scene>
         <a-sky id="black-void" color="#000" radius="4000" visible="false"></a-sky>
@@ -644,6 +777,17 @@
         </a-entity>
         <a-entity oculus-touch-controls="hand: left" transition-controller></a-entity>
         <a-entity oculus-touch-controls="hand: right" transition-controller head-tracker></a-entity>
+
+        <!-- <a-assets>
+            <a-asset-item id="doctor-model" src="/static/doctor.glb"></a-asset-item>
+        </a-assets>
+
+        <a-entity id="doctor-entity" gltf-model="#doctor-model" position="0 0 -2" rotation="0 -30 0" scale="2 2 2"
+            visible="false">
+        </a-entity> -->
+
+        <a-entity id="intro-injection" particle-video="srcId: injection-video" visible="false"></a-entity>
+
     </a-scene>
 </body>
 
