@@ -6,21 +6,21 @@ By combining physiological simulation, custom particle shaders, and spatial audi
 
 ## 📖 Theoretical Framework
 
-This project is not merely a visual simulation but is grounded in phenomenological research into NDEs. The narrative structure is based on **Dr. [cite_start]Kenneth Ring's 5-stage model**[cite: 3, 5]:
+This project is not merely a visual simulation but is grounded in phenomenological research into NDEs. The narrative structure is based on **Dr. Kenneth Ring's 5-stage model**:
 
-1.  [cite_start]**Peace & Separation:** The cessation of physical pain and the onset of weightlessness[cite: 25, 26].
-2.  [cite_start]**The Passage (The Tunnel):** The visual transition from the physical world to the void[cite: 8].
-3.  [cite_start]**The Revelation (The Light):** Encountering hyper-vivid colors and illumination[cite: 9, 49].
-4.  [cite_start]**The Reflection (Life Review):** A panoramic, holographic relive of one's memories[cite: 10, 16].
-5.  [cite_start]**The Return:** The forced return to the physical body[cite: 11].
+1.  **Peace & Separation:** The cessation of physical pain and the onset of weightlessness.
+2.  **The Passage (The Tunnel):** The visual transition from the physical world to the void.
+3.  **The Revelation (The Light):** Encountering hyper-vivid colors and illumination.
+4.  **The Reflection (Life Review):** A panoramic, holographic relive of one's memories.
+5.  **The Return:** The forced return to the physical body.
 
 ## ✨ Key Features
 
 ### 🧠 The Phenomenological Translation
-[cite_start]We translated abstract NDE reports into specific VR sensory language[cite: 41]:
-* **Visuals:** Implemented "360-degree spherical vision" using high FOV and reflective surfaces[cite: 43, 44].
-* [cite_start]**Time:** Simulated "non-linear time" by freezing physical world animations (dust, people) while consciousness continues to move[cite: 52, 53].
-* [cite_start]**Audio:** Modeled the "Auditory Shift" by transitioning from chaotic real-world sounds to a non-directional, telepathic buzzing/ringing[cite: 27, 46].
+We translated abstract NDE reports into specific VR sensory language:
+* **Visuals:** Implemented "360-degree spherical vision" using high FOV and reflective surfaces.
+* **Time:** Simulated "non-linear time" by freezing physical world animations (dust, people) while consciousness continues to move.
+* **Audio:** Modeled the "Auditory Shift" by transitioning from chaotic real-world sounds to a non-directional, telepathic buzzing/ringing.
 
 ### 🛠 Technical Implementation
 * **Hybrid Architecture:** * **Frontend:** WebXR (A-Frame / Three.js) for the visual experience.
@@ -30,9 +30,9 @@ This project is not merely a visual simulation but is grounded in phenomenologic
     * Custom shaders handle the morphing from "Flat Photos" to "Chaotic Vortex" (The Tunnel) using vertex displacement.
     * **Performance Optimization:** Implements dynamic `drawRange` manipulation to reduce particle count by 70% during high-speed transitions to maintain 60 FPS on mobile hardware.
 * **Interaction Journey:**
-    * **Trigger:** User initiates the experience via a simulated "Injection" gesture[cite: 36].
+    * **Trigger:** User initiates the experience via a simulated "Injection" gesture.
     * **Gaze-Based Focus:** "Spotlight" effect on memories triggered by looking at specific particle clusters.
-    * **Return Mechanism:** An interactive CPR mechanic pulls the user back to reality[cite: 38].
+    * **Return Mechanism:** An interactive CPR mechanic pulls the user back to reality.
 
 <table>
   <tr>
@@ -73,7 +73,7 @@ This project is not merely a visual simulation but is grounded in phenomenologic
 └── README.md
 ```
 
-<img width="1321" height="757" alt="OutofBody" src="https://github.com/user-attachments/assets/29533d27-faba-4151-a659-7ca7edeb308d" />
+<img width="80%" alt="OutofBody" src="https://github.com/user-attachments/assets/29533d27-faba-4151-a659-7ca7edeb308d" />
 
 
 
