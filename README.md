@@ -34,11 +34,22 @@ This project is not merely a visual simulation but is grounded in phenomenologic
     * **Gaze-Based Focus:** "Spotlight" effect on memories triggered by looking at specific particle clusters.
     * **Return Mechanism:** An interactive CPR mechanic pulls the user back to reality[cite: 38].
 
-<img width="1411" height="832" alt="Injection" src="https://github.com/user-attachments/assets/078ceb33-8247-402b-8dff-ad9dd687e950" />
-<img width="1404" height="800" alt="Memory" src="https://github.com/user-attachments/assets/9e666b79-fe74-46d7-a509-8868a705cfae" />
-<img width="1287" height="729" alt="All@once" src="https://github.com/user-attachments/assets/6835ee67-51dc-4d5d-9741-9f4cf2823157" />
-<img width="1321" height="757" alt="OutofBody" src="https://github.com/user-attachments/assets/c7556c14-c3aa-4f72-a09a-daeac49a4163" />
-
+<table>
+  <tr>
+    <td width="25%">
+      <img src="https://github.com/user-attachments/assets/078ceb33-8247-402b-8dff-ad9dd687e950" alt="Injection" />
+    </td>
+    <td width="25%">
+      <img src="https://github.com/user-attachments/assets/9e666b79-fe74-46d7-a509-8868a705cfae" alt="Memory" />
+    </td>
+    <td width="25%">
+      <img src="https://github.com/user-attachments/assets/6835ee67-51dc-4d5d-9741-9f4cf2823157" alt="All@once" />
+    </td>
+    <td width="25%">
+      <img src="https://github.com/user-attachments/assets/c7556c14-c3aa-4f72-a09a-daeac49a4163" alt="OutofBody" />
+    </td>
+  </tr>
+</table>
  
 
 ## 📦 Tech Stack
@@ -60,8 +71,11 @@ This project is not merely a visual simulation but is grounded in phenomenologic
 │   ├── injection.mp4      # Particle video source
 │   ├── *.mp3              # SFX (heartbeat, flatline, footstep, etc.)
 └── README.md
+```
+
+<img width="1321" height="757" alt="OutofBody" src="https://github.com/user-attachments/assets/29533d27-faba-4151-a659-7ca7edeb308d" />
 
 
-![IMG_1192](https://github.com/user-attachments/assets/d5f476ce-10d2-4252-a79a-6f011ff44f9f)
+
 
 
